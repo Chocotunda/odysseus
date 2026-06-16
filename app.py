@@ -760,6 +760,10 @@ logger.info("Webhook & API token routes initialized")
 from routes.note_routes import setup_note_routes
 app.include_router(setup_note_routes(task_scheduler))
 
+# Planner (user-facing tasks + daily planning; distinct from the scheduler)
+from routes.planner_routes import setup_planner_routes
+app.include_router(setup_planner_routes(task_scheduler))
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
@@ -811,6 +815,10 @@ async def serve_index(request: Request):
 
 @app.get("/notes")
 async def serve_notes(request: Request):
+    return await serve_index(request)
+
+@app.get("/planner")
+async def serve_planner(request: Request):
     return await serve_index(request)
 
 @app.get("/calendar")

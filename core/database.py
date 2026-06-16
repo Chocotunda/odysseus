@@ -1635,6 +1635,74 @@ class Note(TimestampMixin, Base):
     agent_session_id  = Column(String, nullable=True)
 
 
+class PlanProject(TimestampMixin, Base):
+    """A project / area / channel that PlanItems group under (Sunsama 'channel').
+
+    Part of the Planner feature — the user-facing daily-planning surface, kept
+    deliberately separate from the scheduler's ScheduledTask/TaskRun (which are
+    backend automation, not to-dos).
+    """
+    __tablename__ = "plan_projects"
+
+    id         = Column(String, primary_key=True, index=True)
+    owner      = Column(String, nullable=True, index=True)
+    name       = Column(String, nullable=False)
+    color      = Column(String, nullable=True)      # reuse the UI CSS-var hexes
+    archived   = Column(Boolean, default=False)
+    sort_order = Column(Integer, default=0)
+
+    __table_args__ = (Index('ix_plan_projects_owner_archived', 'owner', 'archived'),)
+
+
+class PlanItem(TimestampMixin, Base):
+    """A user-facing task / to-do with planning fields.
+
+    Distinct from ScheduledTask (backend automation). `planned_day`/`due_date`
+    are 'YYYY-MM-DD' strings in the user's local day (server tz for now), so the
+    central "items for a day = exact string equality" invariant holds even if the
+    server runs UTC. `ordinal` uses an integer-gap scheme for drag-reorder.
+
+    The `source_*`/`person_id` columns are soft references (plain ids, not FKs)
+    into other features, so a task can carry a back-link to the Note / meeting /
+    person it came from without coupling delete-cascades across features. They
+    are unused by Phase 1 CRUD but designed in now to avoid a later migration.
+    """
+    __tablename__ = "plan_items"
+
+    id            = Column(String, primary_key=True, index=True)
+    owner         = Column(String, nullable=True, index=True)  # always stamped on write
+    title         = Column(String, nullable=False, default="")
+    notes         = Column(Text, nullable=True)
+    # planning
+    planned_day   = Column(String, nullable=True, index=True)   # 'YYYY-MM-DD'; NULL = backlog
+    due_date      = Column(String, nullable=True)               # 'YYYY-MM-DD'
+    priority      = Column(String, default="normal")  # none|normal|important|urgent
+    status        = Column(String, default="open")    # open|in_progress|done|cancelled
+    completed_at  = Column(DateTime, nullable=True)
+    # effort
+    estimate_minutes = Column(Integer, nullable=True)
+    # ordering (integer-gap scheme; new items at max+1024)
+    ordinal       = Column(Integer, default=0, index=True)
+    # grouping
+    project_id    = Column(String, ForeignKey("plan_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    source        = Column(String, default="user")       # user|agent|email|calendar|capture
+    session_id    = Column(String, nullable=True)        # chat session that spawned/solves it
+    # soft cross-feature back-references (no FK on purpose — see docstring)
+    source_note_id  = Column(String, nullable=True, index=True)
+    source_event_id = Column(String, nullable=True, index=True)
+    person_id       = Column(String, nullable=True, index=True)
+    # AI (mirror Note's reserved fields; gate re-classification to avoid LLM spend)
+    ai_classification = Column(Text, nullable=True)
+    ai_content_hash   = Column(String, nullable=True)
+
+    project = relationship("PlanProject")
+
+    __table_args__ = (
+        Index('ix_plan_items_owner_day', 'owner', 'planned_day'),
+        Index('ix_plan_items_owner_status', 'owner', 'status'),
+    )
+
+
 class CalendarCal(TimestampMixin, Base):
     """A calendar (e.g. 'Personal', 'TimeTree')."""
     __tablename__ = "calendars"

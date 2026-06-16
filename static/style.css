@@ -37673,3 +37673,71 @@ body.theme-frosted .modal {
 .log-line-default {
   color: var(--fg, #9cdef2);
 }
+
+/* ============================ Planner ============================ */
+/* User-facing daily-planning page (distinct from the scheduler's Tasks). */
+.planner-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.planner-pane {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: min(720px, 94vw);
+  max-height: 88vh;
+  margin-top: 6vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+.planner-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+}
+.planner-title {
+  flex: 1; margin: 0; font-size: 14px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px; color: var(--fg);
+}
+.planner-close {
+  background: transparent; border: none; cursor: pointer;
+  height: 24px; width: 24px; padding: 0; color: var(--fg); opacity: 0.6;
+}
+.planner-close:hover { opacity: 1; background: transparent; border: none; }
+.planner-capture { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.planner-capture-input { width: 100%; }
+.planner-hint { font-size: 10px; opacity: 0.5; margin-top: 6px; }
+.planner-filters {
+  display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border);
+}
+.planner-filter { height: 26px; padding: 0 12px; font-size: 11px; opacity: 0.7; }
+.planner-filter.active {
+  opacity: 1; color: var(--fg); border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+.planner-list { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.planner-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 10px; margin-bottom: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+}
+.planner-item.prio-urgent { border-left-color: var(--red); }
+.planner-item.prio-important { border-left-color: var(--warn); }
+.planner-item.done { opacity: 0.45; }
+.planner-item.done .planner-item-title { text-decoration: line-through; }
+.planner-check {
+  background: transparent; border: none; cursor: pointer; padding: 0;
+  height: 18px; width: 18px; color: var(--fg); opacity: 0.7; flex-shrink: 0;
+}
+.planner-check:hover { opacity: 1; background: transparent; border: none; color: var(--red); }
+.planner-item-main { flex: 1; min-width: 0; }
+.planner-item-title { font-size: 13px; color: var(--fg); word-break: break-word; }
+.planner-item-meta {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 10px; opacity: 0.6; margin-top: 3px;
+}
+.planner-ai-pending { color: var(--red); opacity: 0.8; font-style: italic; }
+.planner-empty { text-align: center; opacity: 0.5; padding: 30px 10px; font-size: 12px; }

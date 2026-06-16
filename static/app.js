@@ -25,6 +25,7 @@ import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
+import plannerModule from './js/planner.js';
 import adminModule from './js/admin.js';
 import settingsModule from './js/settings.js';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -922,6 +923,14 @@ function initializeEventListeners() {
     setInterval(() => notesModule.refreshDueBadge(), 5 * 60 * 1000);
   }
 
+  // Planner tool button
+  const toolPlannerBtn = el('tool-planner-btn');
+  if (toolPlannerBtn) {
+    toolPlannerBtn.addEventListener('click', () => {
+      if (plannerModule) plannerModule.togglePanel();
+    });
+  }
+
   // URL-based panel routing — bookmark /calendar, /notes, /cookbook etc
   // and the matching tool opens automatically on page load.
   const urlPath = window.location.pathname;
@@ -1006,6 +1015,7 @@ function initializeEventListeners() {
         setTimeout(_go, 200);
       }
     },
+    '/planner':  () => plannerModule && plannerModule.openPanel(),
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/email':    () => {
