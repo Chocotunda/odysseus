@@ -37,6 +37,16 @@ def _request(user):
     return SimpleNamespace(state=SimpleNamespace(current_user=user, api_token=False))
 
 
+def _token_request(owner, scopes):
+    """A bearer-API-token request as the auth middleware would shape it."""
+    return SimpleNamespace(state=SimpleNamespace(
+        current_user="api",
+        api_token=True,
+        api_token_scopes=list(scopes),
+        api_token_owner=owner,
+    ))
+
+
 def _seed(SessionFactory, owner, title="x"):
     db = SessionFactory()
     try:
@@ -96,3 +106,54 @@ def test_get_item_404_for_null_owner(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         get_item(_request("alice"), item_id=orphan_id)
     assert exc.value.status_code == 404
+
+
+def test_token_with_write_scope_can_create(monkeypatch):
+    SessionFactory = _session_factory()
+    monkeypatch.setattr(planner_routes, "SessionLocal", SessionFactory)
+    router = planner_routes.setup_planner_routes()
+    create_item = _endpoint(router, "/items", "POST")
+
+    body = planner_routes.PlanItemCreate(title="from token")
+    out = create_item(_token_request("alice", ["todos:write"]), body=body)
+
+    assert out["title"] == "from token"
+    list_items = _endpoint(router, "/items", "GET")
+    listed = list_items(_token_request("alice", ["todos:read"]))
+    assert {it["id"] for it in listed["items"]} == {out["id"]}
+
+
+def test_token_missing_write_scope_is_forbidden(monkeypatch):
+    SessionFactory = _session_factory()
+    monkeypatch.setattr(planner_routes, "SessionLocal", SessionFactory)
+    router = planner_routes.setup_planner_routes()
+    create_item = _endpoint(router, "/items", "POST")
+
+    body = planner_routes.PlanItemCreate(title="nope")
+    with pytest.raises(HTTPException) as exc:
+        create_item(_token_request("alice", ["todos:read"]), body=body)
+    assert exc.value.status_code == 403
+
+
+def test_token_read_scope_cannot_read_other_owner(monkeypatch):
+    SessionFactory = _session_factory()
+    monkeypatch.setattr(planner_routes, "SessionLocal", SessionFactory)
+    bob_id = _seed(SessionFactory, "bob")
+    router = planner_routes.setup_planner_routes()
+    get_item = _endpoint(router, "/items/{item_id}", "GET")
+
+    with pytest.raises(HTTPException) as exc:
+        get_item(_token_request("alice", ["todos:read"]), item_id=bob_id)
+    assert exc.value.status_code == 404
+
+
+def test_token_with_no_owner_is_forbidden(monkeypatch):
+    SessionFactory = _session_factory()
+    monkeypatch.setattr(planner_routes, "SessionLocal", SessionFactory)
+    router = planner_routes.setup_planner_routes()
+    create_item = _endpoint(router, "/items", "POST")
+
+    body = planner_routes.PlanItemCreate(title="x")
+    with pytest.raises(HTTPException) as exc:
+        create_item(_token_request(None, ["todos:write"]), body=body)
+    assert exc.value.status_code == 403

@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 # adjacent gaps shrinking below 2 trigger a rebalance — added with reorder).
 ORDINAL_GAP = 1024
 
+# API-token scope gates (browser/cookie sessions bypass these — they auth by
+# cookie). Reads accept either todos scope; writes require todos:write.
+TODO_READ_SCOPES = {"todos:read", "todos:write"}
+TODO_WRITE_SCOPES = {"todos:write"}
+
 
 class PlanItemCreate(BaseModel):
     title: str = ""
@@ -112,14 +117,22 @@ async def enrich_item(item_id: str, text: str, owner: Optional[str]) -> None:
 def setup_planner_routes(task_scheduler=None):
     router = APIRouter(prefix="/api/planner", tags=["planner"])
 
-    def _owner(request: Request) -> Optional[str]:
-        # require_user (not bare get_current_user): a request that reaches these
-        # owner-scoped routes with NO identity must fail closed when auth is
-        # configured rather than be handed single-user blanket access. The
-        # documented anonymous modes still resolve to None. Coercing "" -> None
-        # is load-bearing: require_user returns "" (never None) in single-user
-        # mode, and the strict ownership gate below is written against this
-        # coerced value.
+    def _owner(request: Request, allowed: set) -> Optional[str]:
+        # Resolve the data owner, honoring API-token scopes (mirrors
+        # routes/codex_routes.py:_scope_owner). Bearer-token callers must carry
+        # one of `allowed` and resolve to their token's owner; everyone else
+        # falls back to require_user (which still fails closed for stray tokens),
+        # coercing "" -> None in single-user mode so the ownership gate below
+        # behaves.
+        if getattr(request.state, "api_token", False):
+            scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+            if not scopes.intersection(allowed):
+                required = " or ".join(sorted(allowed))
+                raise HTTPException(403, f"API token missing required scope: {required}")
+            owner = getattr(request.state, "api_token_owner", None)
+            if not owner:
+                raise HTTPException(403, "API token has no owner")
+            return owner
         return require_user(request) or None
 
     def _get_owned(db, item_id: str, user: Optional[str]) -> PlanItem:
@@ -145,7 +158,7 @@ def setup_planner_routes(task_scheduler=None):
         status: Optional[str] = None,
         project: Optional[str] = None,
     ):
-        user = _owner(request)
+        user = _owner(request, TODO_READ_SCOPES)
         db = SessionLocal()
         try:
             q = db.query(PlanItem)
@@ -168,7 +181,7 @@ def setup_planner_routes(task_scheduler=None):
     # --- GET ONE ---
     @router.get("/items/{item_id}")
     def get_item(request: Request, item_id: str):
-        user = _owner(request)
+        user = _owner(request, TODO_READ_SCOPES)
         db = SessionLocal()
         try:
             return _item_to_dict(_get_owned(db, item_id, user))
@@ -178,7 +191,7 @@ def setup_planner_routes(task_scheduler=None):
     # --- CREATE ---
     @router.post("/items")
     def create_item(request: Request, body: PlanItemCreate):
-        user = _owner(request)
+        user = _owner(request, TODO_WRITE_SCOPES)
         db = SessionLocal()
         try:
             item = PlanItem(
@@ -209,7 +222,7 @@ def setup_planner_routes(task_scheduler=None):
     # --- COMPLETE ---
     @router.post("/items/{item_id}/complete")
     def complete_item(request: Request, item_id: str):
-        user = _owner(request)
+        user = _owner(request, TODO_WRITE_SCOPES)
         db = SessionLocal()
         try:
             item = _get_owned(db, item_id, user)
@@ -224,7 +237,7 @@ def setup_planner_routes(task_scheduler=None):
     # --- CAPTURE (NL → structured; returns instantly, enriches in background) ---
     @router.post("/capture")
     async def capture(request: Request, body: CaptureBody, background_tasks: BackgroundTasks):
-        user = _owner(request)
+        user = _owner(request, TODO_WRITE_SCOPES)
         db = SessionLocal()
         try:
             # Create + return the item IMMEDIATELY from the raw text. The model
@@ -251,7 +264,7 @@ def setup_planner_routes(task_scheduler=None):
     # --- PLAN (set/clear the day; NULL day = backlog) ---
     @router.post("/items/{item_id}/plan")
     def plan_item(request: Request, item_id: str, body: PlanItemPlan):
-        user = _owner(request)
+        user = _owner(request, TODO_WRITE_SCOPES)
         db = SessionLocal()
         try:
             item = _get_owned(db, item_id, user)
