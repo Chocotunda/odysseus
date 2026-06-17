@@ -41,7 +41,7 @@ Add a third window to the existing Tauri v2 app that loads an **external URL** (
 | `settings` | local `ui/settings.html` | **yes** | unchanged — server URL + token config |
 | `main` | **remote** `http://127.0.0.1:7860/` | **NO** | new — the full workspace, sandboxed like a browser tab |
 
-**IPC isolation is a security boundary.** `withGlobalTauri` is currently `true` globally. It must be flipped off globally and Tauri capability granted only to the two **local** windows. A remote page (the Odysseus UI, which renders untrusted LLM/crawled content) must never see `window.__TAURI__` — that would be a privilege-escalation surface. The `main` window is a plain sandboxed WebView.
+**IPC isolation is a security boundary.** The mechanism is the **capability allowlist** (`capabilities/default.json`), which already scopes IPC to `["overlay","settings"]`. Tauri v2 has no per-window `withGlobalTauri` toggle, and the no-build-step overlay/settings JS depends on the global, so it stays on — but a window **not listed in any capability gets zero permitted commands**. The remote `main` window is therefore never added to capabilities; any `invoke` from it is rejected. To keep `main`'s label out of capabilities entirely, the server-down screen uses a **separate local `gate` window** (which *is* capability-bearing) rather than loading into `main`. A remote page (the Odysseus UI, which renders untrusted LLM/crawled content) thus has no usable Tauri surface.
 
 ### Activation policy
 
