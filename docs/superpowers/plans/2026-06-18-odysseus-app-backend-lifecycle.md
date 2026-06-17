@@ -630,9 +630,12 @@ fn stop_managed(app: &AppHandle) -> Vec<u32> {
     pids
 }
 
-/// Quit path: stop managed children, then — if a backend WE DIDN'T start is
-/// still listening — ask whether to stop it too.
-fn shutdown_for_quit(app: &AppHandle) {
+/// Tray "Quit": stop managed children, then — if a backend WE DIDN'T start is
+/// still listening — ask whether to stop it too, and exit when the answer is in.
+/// Uses the ASYNC dialog (`.show(callback)`): `blocking_show()` on the main
+/// thread (where tray handlers run) deadlocks (waits for a dialog that needs the
+/// same thread to render). Research-confirmed: tauri-plugin-dialog v2.
+fn quit_flow(app: &AppHandle) {
     let managed_pids = stop_managed(app);
     let cfg = config::load_from(&config_dir(app));
     let port = backend::port_from_url(&cfg.server_url);
@@ -641,25 +644,28 @@ fn shutdown_for_quit(app: &AppHandle) {
         .filter(|p| !managed_pids.contains(p))
         .collect();
     if external.is_empty() {
+        app.exit(0);
         return;
     }
-    let stop = app
-        .dialog()
+    let app2 = app.clone();
+    app.dialog()
         .message("An Odysseus backend that this app didn't start is still running. Stop it too?")
         .buttons(MessageDialogButtons::OkCancelCustom(
             "Stop it".into(),
             "Leave it running".into(),
         ))
-        .blocking_show();
-    if stop {
-        for pid in external {
-            backend::sigterm(pid);
-        }
-    }
+        .show(move |stop| {
+            if stop {
+                for pid in external {
+                    backend::sigterm(pid);
+                }
+            }
+            app2.exit(0);
+        });
 }
 
 /// Tray "Stop Backend": stop managed immediately; for an unmanaged backend,
-/// confirm first. Does NOT quit the app.
+/// confirm first (async dialog). Does NOT quit the app.
 fn stop_backend_action(app: &AppHandle) {
     let st = app.state::<backend::BackendState>();
     let has_managed = !st.managed.lock().unwrap().is_empty();
@@ -672,20 +678,20 @@ fn stop_backend_action(app: &AppHandle) {
     }
     let cfg = config::load_from(&config_dir(app));
     let port = backend::port_from_url(&cfg.server_url);
-    let pids = backend::listening_pids(&[port, 8100]);
-    if pids.is_empty() {
+    let external = backend::listening_pids(&[port, 8100]);
+    if external.is_empty() {
         return;
     }
-    let stop = app
-        .dialog()
+    app.dialog()
         .message("This Odysseus backend wasn't started by the app. Stop it anyway?")
         .buttons(MessageDialogButtons::OkCancelCustom("Stop it".into(), "Cancel".into()))
-        .blocking_show();
-    if stop {
-        for pid in pids {
-            backend::sigterm(pid);
-        }
-    }
+        .show(move |stop| {
+            if stop {
+                for pid in external {
+                    backend::sigterm(pid);
+                }
+            }
+        });
 }
 ```
 
@@ -709,18 +715,17 @@ with:
             let menu = Menu::with_items(app, &[&open_i, &capture_i, &stop_i, &settings_i, &quit_i])?;
 ```
 
-Add a `"stop_backend"` arm and change the `"quit"` arm in `on_menu_event`:
+Add a `"stop_backend"` arm and change the `"quit"` arm in `on_menu_event` (`quit_flow` calls `app.exit(0)` itself — possibly from the dialog callback):
 ```rust
                     "stop_backend" => stop_backend_action(app),
 ```
 ```rust
-                    "quit" => {
-                        shutdown_for_quit(app);
-                        app.exit(0);
-                    }
+                    "quit" => quit_flow(app),
 ```
 
-- [ ] **Step 4: Intercept Cmd-Q / window-driven exit via RunEvent**
+- [ ] **Step 4: Catch every quit path (incl. Cmd-Q) via `RunEvent::Exit`**
+
+On macOS, `RunEvent::ExitRequested` is **unreliable** for Cmd-Q / App-menu Quit (tauri-apps/tauri#9198) — it does not fire on those paths, so cleanup keyed on it would silently not run. `RunEvent::Exit` **always** fires and is the reliable catch-all. Use it ONLY for the unconditional managed cleanup — a plain SIGTERM, safe during teardown. Do **not** show a dialog here (the run loop/windows are tearing down, and a modal can't be presented or cancelled). The unmanaged confirm lives on the tray-quit path (Step 3), where the app is still alive.
 
 Replace the tail of `run()`:
 ```rust
@@ -732,13 +737,16 @@ with:
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                shutdown_for_quit(app_handle);
+            if let tauri::RunEvent::Exit = event {
+                // Safety net: never orphan processes we spawned, on ANY quit
+                // path (Cmd-Q, dock Quit, last window). Idempotent via `cleaned`,
+                // so a tray-quit that already cleaned up is a no-op here.
+                let _ = stop_managed(app_handle);
             }
         });
 ```
 
-(`shutdown_for_quit` is idempotent via `cleaned`, so the tray-quit path + this handler can't double-prompt.)
+Resulting behavior: **tray Quit** → managed killed + unmanaged confirm (Step 3) → `exit(0)` → `Exit` fires → `stop_managed` no-ops (already cleaned). **Cmd-Q / dock Quit / last window** → `Exit` fires → managed killed; an unmanaged backend is **left running** (we didn't start it, and a modal can't be shown mid-teardown) — stop it via the "Stop Backend" tray item, which confirms while the app is alive.
 
 - [ ] **Step 5: Verify it builds**
 
@@ -947,7 +955,7 @@ Run from a real Terminal. No automated tests cover the spawn/SIGTERM/dialog/GUI 
 - [ ] **Step 3: Unmanaged → confirm dialog on quit**
   - Start the backend manually first (the `nohup` commands from HANDOFF), then launch the app → workspace opens (no spawn). **Quit.** Expected: the confirm dialog "…didn't start…stop it too?" appears. Click **Leave it running** → `lsof -iTCP:7860` still shows it. Relaunch + quit again, click **Stop it** → it's gone.
 
-- [ ] **Step 4: Cmd-Q path** — repeat Step 2 but quit with **Cmd-Q** instead of the tray. Expected: same cleanup (confirms the `RunEvent::ExitRequested` handler fires). If cleanup did NOT happen on Cmd-Q, note it — the fix is to also handle `RunEvent::Exit` in the run closure.
+- [ ] **Step 4: Cmd-Q path** — repeat Step 2 but quit with **Cmd-Q**. Expected: **managed** uvicorn + chroma terminate (via `RunEvent::Exit`); verify with `lsof -iTCP:7860`/`:8100`. By design Cmd-Q does NOT show the unmanaged confirm (only the tray Quit does, Step 3) — with an externally-started backend, confirm it's still running after Cmd-Q.
 
 - [ ] **Step 5: "Stop Backend" tray item** — start via the app, then tray → **Stop Backend**: managed processes stop, app stays running, gate reappears (the workspace's server is gone). With a manually-started backend, tray → Stop Backend shows the confirm first.
 
@@ -977,13 +985,15 @@ git push origin <branch>
 - Async startup / no main-thread block → Task 4 (`tauri::async_runtime::spawn(start_flow)`); verified Task 7 Step 7.
 - "Starting…" gate state + readiness on `:7860` ping → Task 4 (`emit_status`, poll loop) + Task 6 (gate JS).
 - Managed vs unmanaged + only-manage-what-we-spawned → Task 5 (`stop_managed` tracks spawned PIDs; `listening_pids` minus managed = external).
-- Quit confirm for unmanaged → Task 5 (`shutdown_for_quit`); verified Task 7 Step 3.
+- Quit confirm for unmanaged → Task 5 (`quit_flow`, async `.show` callback); verified Task 7 Step 3. Managed cleanup on every path → `RunEvent::Exit` + `stop_managed` (macOS-reliable, unlike `ExitRequested`).
 - "Stop Backend" tray item (confirm for external) → Task 5 (`stop_backend_action`).
 - `backend_dir` setting + auto-detect → Task 1 (`default_backend_dir`) + Task 3 (persist) + Task 6 (Settings field).
 - Ollama health-check-only / not managed → not spawned anywhere (only chroma + uvicorn in `spawn`); no Ollama code added. ✓
 - Log files for diagnosability → Task 2 (`log_stdio` → `/tmp/odysseus-app-*.log`).
 - Failure / timeout / invalid-dir handling → Task 4 (`failed`/`needs-config` emits) + Task 6 (render).
 
-**Placeholder scan:** none — all code blocks complete; the two conditional notes (Cmd-Q→Exit fallback, `core:event:default` fallback) give explicit instructions, not TODOs.
+**Research-informed corrections applied (workflow, 2026-06-18):** quit cleanup keyed on `RunEvent::Exit` not `ExitRequested` (macOS Cmd-Q reliability, tauri#9198); all tray-triggered dialogs use the async `.show(callback)` API, never `blocking_show()` (main-thread deadlock). Other plan assumptions (dialog `OkCancelCustom`/return, `reqwest` `port()`, `Emitter`, `tokio` time, gate `core:default` covers `event.listen`) were verified correct and unchanged.
 
-**Type consistency:** `BackendState { managed: Mutex<Vec<Child>>, cleaned: AtomicBool }` is defined in Task 2 and used in Tasks 4–5. `port_from_url`/`is_valid_backend_dir`/`spawn`/`listening_pids`/`sigterm`/`uvicorn_spec`/`chroma_spec`/`parse_lsof_pids` defined in Tasks 1–2, used consistently in Tasks 4–5. `start_flow`/`emit_status`/`open_main_hide_gate`/`stop_managed`/`shutdown_for_quit`/`stop_backend_action`/`retry_start` names match across definition and call sites. `save_config` gains `backend_dir` (Task 6 Step 3) matching the JS `backendDir` arg (Task 6 Step 2) and the `Config` field (Task 3). Gate `backend-status` event name matches between `emit_status` (Task 4) and the JS listener (Task 6).
+**Placeholder scan:** none — all code blocks complete; the `core:event:default` note (Task 6 Step 7) is an explicit conditional instruction, not a TODO.
+
+**Type consistency:** `BackendState { managed: Mutex<Vec<Child>>, cleaned: AtomicBool }` is defined in Task 2 and used in Tasks 4–5. `port_from_url`/`is_valid_backend_dir`/`spawn`/`listening_pids`/`sigterm`/`uvicorn_spec`/`chroma_spec`/`parse_lsof_pids` defined in Tasks 1–2, used consistently in Tasks 4–5. `start_flow`/`emit_status`/`open_main_hide_gate`/`stop_managed`/`quit_flow`/`stop_backend_action`/`retry_start` names match across definition and call sites. `save_config` gains `backend_dir` (Task 6 Step 3) matching the JS `backendDir` arg (Task 6 Step 2) and the `Config` field (Task 3). Gate `backend-status` event name matches between `emit_status` (Task 4) and the JS listener (Task 6).
