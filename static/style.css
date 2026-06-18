@@ -396,7 +396,9 @@ body.bg-pattern-sparkles {
       margin: 0;
       padding: 0;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      backdrop-filter: blur(10px);
+      /* No backdrop-filter: the sidebar background is opaque (alpha 1), so a
+         blur() here is visually invisible but still forces a full-area GPU
+         re-composite every frame (~120fps on ProMotion) — pure waste. Removed. */
       border: 1px solid color-mix(in srgb, var(--fg) 11%, transparent);
       position: relative;
     }

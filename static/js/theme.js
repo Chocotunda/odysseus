@@ -393,6 +393,18 @@ const _CANVAS_PATTERNS = { synapse: _initSynapse, rain: _initRain, constellation
   'perlin-flow': _initPerlinFlow,
   petals: _initPetals, sparkles: _initSparkles, embers: _initEmbers };
 
+// Throttle the decorative background-pattern animation loops to ~30fps instead
+// of the full display refresh rate. On a 120Hz ProMotion display these loops
+// redrew a full-screen canvas 120×/sec (and called getComputedStyle every
+// frame), pinning the WebKit GPU process at ~13% + ~7% CPU continuously — made
+// worse by the macOS wrapper disabling occlusion throttling. 30fps is plenty
+// for ambient motion and cuts the cost ~4×. rAF naturally pauses while the page
+// is hidden, so the loop idles on minimize without extra handling. Each pattern
+// loop self-reschedules via this instead of requestAnimationFrame(draw).
+function _bgRaf(fn) {
+  setTimeout(() => requestAnimationFrame(fn), 33);
+}
+
 export function applyBgEffectColor(color) {
   document.documentElement.style.setProperty('--bg-effect-color', color || '');
 }
@@ -1544,7 +1556,7 @@ function _initSynapse() {
       canvas.remove();
       return;
     }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
 
@@ -1628,7 +1640,7 @@ function _initRain() {
       canvas.remove();
       return;
     }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
     // Intensity also controls rain speed + spawn rate (feels slower/lighter when dim)
@@ -1714,7 +1726,7 @@ function _initConstellations() {
       canvas.remove();
       return;
     }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     t += 0.01;
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
@@ -1805,7 +1817,7 @@ function _initPerlinFlow() {
   }
   function draw() {
     if (!document.body.classList.contains('bg-pattern-perlin-flow')) { window.removeEventListener('resize', _onResize); canvas.remove(); return; }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     ctx.fillStyle = getFade();
     ctx.fillRect(0, 0, W, H);
     const c = getColor();
@@ -1859,7 +1871,7 @@ function _initPetals() {
   function getColor() { const s = getComputedStyle(document.documentElement); return s.getPropertyValue('--bg-effect-color').trim() || s.getPropertyValue('--fg').trim() || '#9cdef2'; }
   function draw() {
     if (!document.body.classList.contains('bg-pattern-petals')) { window.removeEventListener('resize', _onResize); canvas.remove(); return; }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
     const sz = _getEffectSize();
@@ -1921,7 +1933,7 @@ function _initSparkles() {
   }
   function draw() {
     if (!document.body.classList.contains('bg-pattern-sparkles')) { window.removeEventListener('resize', _onResize); canvas.remove(); return; }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     ctx.clearRect(0, 0, W, H);
     const c = getColor();
     const sizeMult = _getEffectSize();
@@ -1991,7 +2003,7 @@ function _initEmbers() {
       canvas.remove();
       return;
     }
-    requestAnimationFrame(draw);
+    _bgRaf(draw);
     // Fade previous frame (destination-out keeps canvas transparent where no embers)
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
