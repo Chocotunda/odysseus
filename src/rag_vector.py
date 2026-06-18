@@ -29,9 +29,15 @@ from src.embedding_lanes import (
 
 logger = logging.getLogger(__name__)
 
+from src.markitdown_runtime import MARKITDOWN_EXTS
+
 DEFAULT_FILE_EXTENSIONS: Set[str] = {
     '.txt', '.md', '.py', '.json', '.yaml', '.yml',
-    '.csv', '.html', '.css', '.js', '.pdf'
+    '.csv', '.html', '.css', '.js', '.pdf',
+    # Office/EPUB docs — extracted via markitdown (extract_office_text below).
+    # Without these the vector index silently skips every Word/Excel/PowerPoint
+    # file, even though the keyword/listing path already supports them.
+    *MARKITDOWN_EXTS,
 }
 
 VECTOR_WEIGHT = 0.7
@@ -508,6 +514,9 @@ class VectorRAG:
                         if ext == '.pdf':
                             from src.personal_docs import extract_pdf_text
                             content = extract_pdf_text(fpath)
+                        elif ext in MARKITDOWN_EXTS:
+                            from src.personal_docs import extract_office_text
+                            content = extract_office_text(fpath)
                         else:
                             with open(fpath, 'r', encoding='utf-8') as f:
                                 content = f.read()
