@@ -401,7 +401,17 @@ const _CANVAS_PATTERNS = { synapse: _initSynapse, rain: _initRain, constellation
 // for ambient motion and cuts the cost ~4×. rAF naturally pauses while the page
 // is hidden, so the loop idles on minimize without extra handling. Each pattern
 // loop self-reschedules via this instead of requestAnimationFrame(draw).
+//
+// Also fully pause while the app window is UNFOCUSED. The web page's own
+// window.blur is unreliable in the wrapped WKWebView (occlusion signals are
+// suppressed), so the native macOS wrapper pushes focus changes in as an
+// `ody-native-focus` CustomEvent (detail = focused bool). When unfocused we
+// stop redrawing entirely (idle GPU ~7% -> ~0) and just poll to resume. In a
+// plain browser the event never fires, so it defaults to running.
+let _bgUnfocused = false;
+window.addEventListener('ody-native-focus', (e) => { _bgUnfocused = !e.detail; });
 function _bgRaf(fn) {
+  if (_bgUnfocused || document.hidden) { setTimeout(() => _bgRaf(fn), 400); return; }
   setTimeout(() => requestAnimationFrame(fn), 33);
 }
 
