@@ -1186,6 +1186,13 @@ body.bg-pattern-sparkles {
        inherited .sidebar-notif-dot rule so it lines up with chats/assistant. */
     #email-unread-dot.sidebar-notif-dot {
       animation: email-notif-breathe 2.2s ease-in-out infinite;
+      /* Static glow (painted once). The breathing is done with opacity +
+         transform below — NOT box-shadow. Animating box-shadow is a paint
+         property, so it repaints this layer every frame (60fps) forever and
+         pinned the WebKit GPU process at ~25% CPU continuously (worse under
+         the macOS wrapper, which disables occlusion throttling). opacity and
+         transform are compositor-only, so the same effect costs ~0. */
+      box-shadow: 0 0 5px 1px color-mix(in srgb, var(--accent, var(--red)) 45%, transparent);
       /* Nudge in from the far-right edge so it doesn't crowd the corner. */
       margin-right: 4px;
       /* Tiny vertical nudge to center with the email label. */
@@ -1193,14 +1200,8 @@ body.bg-pattern-sparkles {
       top: 0.1px;
     }
     @keyframes email-notif-breathe {
-      0%, 100% {
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, var(--red)) 60%, transparent);
-        opacity: 0.85;
-      }
-      50% {
-        box-shadow: 0 0 6px 2px color-mix(in srgb, var(--accent, var(--red)) 55%, transparent);
-        opacity: 1;
-      }
+      0%, 100% { opacity: 0.7; transform: scale(1); }
+      50%      { opacity: 1;   transform: scale(1.18); }
     }
     @media (prefers-reduced-motion: reduce) {
       #email-unread-dot.sidebar-notif-dot { animation: none; }
