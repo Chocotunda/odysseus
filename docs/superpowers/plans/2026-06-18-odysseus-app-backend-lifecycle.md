@@ -12,6 +12,10 @@
 
 ---
 
+## Post-implementation update (2026-06-18, supersedes Cmd-Q notes below)
+
+Shipped on `odysseus-app` `master` @ `2284d40`. One behavior changed from the plan after live testing: **Cmd-Q now DOES show the unmanaged-backend confirm.** Instrumentation confirmed macOS delivers only `RunEvent::Exit` (never `ExitRequested`) on Cmd-Q (tauri#9198), so the plan's "Cmd-Q leaves the unmanaged backend running / use the tray to stop it" fallback wasn't acceptable. Fix: a **custom app menu** whose "Quit Odysseus" item (Cmd+Q) routes through `app.on_menu_event` → `quit_flow` (the same managed-cleanup + async confirm path as the tray Quit). A full **Edit submenu** (predefined cut/copy/paste/select-all) is included so clipboard shortcuts keep working in the wrapped web workspace. `RunEvent::Exit` → `stop_managed` remains as the always-fires safety net. So wherever the text below says Cmd-Q skips the confirm, read: **Cmd-Q and tray Quit both prompt; clipboard verified intact.**
+
 ## File Structure
 
 - **Create** `src-tauri/src/backend.rs` — backend-lifecycle unit. Pure helpers (paths, ports, lsof parsing) + runtime fns (spawn, detect, SIGTERM) + `BackendState`.
@@ -955,7 +959,7 @@ Run from a real Terminal. No automated tests cover the spawn/SIGTERM/dialog/GUI 
 - [ ] **Step 3: Unmanaged → confirm dialog on quit**
   - Start the backend manually first (the `nohup` commands from HANDOFF), then launch the app → workspace opens (no spawn). **Quit.** Expected: the confirm dialog "…didn't start…stop it too?" appears. Click **Leave it running** → `lsof -iTCP:7860` still shows it. Relaunch + quit again, click **Stop it** → it's gone.
 
-- [ ] **Step 4: Cmd-Q path** — repeat Step 2 but quit with **Cmd-Q**. Expected: **managed** uvicorn + chroma terminate (via `RunEvent::Exit`); verify with `lsof -iTCP:7860`/`:8100`. By design Cmd-Q does NOT show the unmanaged confirm (only the tray Quit does, Step 3) — with an externally-started backend, confirm it's still running after Cmd-Q.
+- [ ] **Step 4: Cmd-Q path** — quit with **Cmd-Q**. Expected (per the post-implementation update): Cmd-Q goes through the custom app-menu Quit → `quit_flow`, so it behaves exactly like the tray Quit — **managed** procs terminate with no prompt; with an **unmanaged** backend it shows the confirm dialog. Also verify clipboard (Cmd-C/V/A) still works in the workspace (custom menu's Edit submenu). ✅ verified live.
 
 - [ ] **Step 5: "Stop Backend" tray item** — start via the app, then tray → **Stop Backend**: managed processes stop, app stays running, gate reappears (the workspace's server is gone). With a manually-started backend, tray → Stop Backend shows the confirm first.
 

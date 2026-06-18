@@ -60,7 +60,9 @@ The app holds a Tauri-managed `BackendState` tracking the spawned `Child` handle
 - **Manual "Stop Backend" tray item** — enabled whenever a backend is running:
   - **Managed** → SIGTERM our children immediately.
   - **Unmanaged** → label reads "Stop Backend (external)"; clicking shows a confirm dialog before SIGTERM-ing the external PID(s).
-- **On quit** (Cmd-Q / tray Quit) — intercept `RunEvent::ExitRequested` (`api.prevent_exit()`), then:
+> **Implemented (2026-06-18, `odysseus-app` master @ `2284d40`):** macOS delivers only `RunEvent::Exit` on Cmd-Q (never `ExitRequested` — tauri#9198, confirmed by instrumentation). So the confirm-on-quit is driven from a **custom app menu**: a "Quit Odysseus" item (Cmd+Q) → `app.on_menu_event` → `quit_flow` (managed cleanup + async unmanaged confirm), matching the tray Quit. A full **Edit submenu** keeps clipboard shortcuts working in the webview. `RunEvent::Exit` → `stop_managed` is the always-fires safety net. Both Cmd-Q and tray Quit prompt for an unmanaged backend.
+
+- **On quit** (Cmd-Q via custom app menu, or tray Quit) — run `quit_flow`, then:
   1. SIGTERM managed children automatically (no prompt).
   2. If an **unmanaged** backend is still running → native confirm dialog *"An Odysseus backend that this app didn't start is still running. Stop it too?"* → **[Stop it]** SIGTERMs the external PID(s) · **[Leave it running]** leaves them.
   3. `app.exit(0)`.
