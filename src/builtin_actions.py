@@ -2219,6 +2219,38 @@ async def action_cookbook_serve(
     return f"Launched {repo_id} (session {sid})", True
 
 
+async def action_sync_calendars(owner: str, **kwargs) -> Tuple[str, bool]:
+    """Pull the owner's configured CalDAV calendars (e.g. iCloud) so the local
+    calendar stays fresh without the user opening the Calendar page.
+
+    Delegates to the same ``sync_caldav`` path the Calendar UI uses (which also
+    pushes any locally-pending create/update/delete back to the server). Raises
+    TaskNoop when no CalDAV account is configured so it doesn't count as a failure.
+    """
+    from src.caldav_sync import sync_caldav, _load_caldav_accounts
+
+    accounts = _load_caldav_accounts(owner)
+    if not accounts:
+        raise TaskNoop("no CalDAV accounts configured")
+
+    result = await sync_caldav(owner)
+    cals = result.get("calendars", 0)
+    events = result.get("events", 0)
+    deleted = result.get("deleted", 0)
+    errors = result.get("errors", []) or []
+
+    parts = [f"synced {cals} calendar(s), {events} event(s)"]
+    if deleted:
+        parts.append(f"{deleted} removed")
+    if errors:
+        parts.append(f"{len(errors)} error(s): " + "; ".join(str(e) for e in errors[:3]))
+    msg = "Calendar sync: " + ", ".join(parts)
+    # Treat a run that surfaced errors as a failure so the task run is flagged,
+    # but only if nothing synced — a partial sync (some calendars OK) is a success.
+    success = not (errors and cals == 0)
+    return msg, success
+
+
 BUILTIN_ACTIONS = {
     "tidy_sessions": action_tidy_sessions,
     "tidy_documents": action_tidy_documents,
@@ -2228,6 +2260,7 @@ BUILTIN_ACTIONS = {
     "draft_email_replies": action_draft_email_replies,
     "extract_email_events": action_extract_email_events,
     "classify_events": action_classify_events,
+    "sync_calendars": action_sync_calendars,
     # ping_events removed from the user-facing registry. Calendar reminders
     # are represented as Notes, so note pings are the single dispatch path.
     "daily_brief": action_daily_brief,
@@ -2252,6 +2285,7 @@ BUILTIN_ACTION_INFO = {
     "draft_email_replies": "Pre-draft AI reply suggestions for new inbox emails",
     "extract_email_events": "Scan emails for booking/meeting confirmations and auto-add to calendar",
     "classify_events": "Tag upcoming events with importance (low/normal/high/critical) and type (work/health/travel/etc.); colors them too",
+    "sync_calendars": "Pull configured CalDAV calendars (e.g. iCloud) on a schedule so the local calendar stays fresh; also pushes locally-pending changes back.",
     "daily_brief": "Build a morning digest: today's calendar, unread email count + top senders, active todos",
     "learn_sender_signatures": "LLM learns each sender's signature from 3+ of their recent emails; cached per address so future renders fold sigs reliably without heuristics",
     "ssh_command": "Run a shell command on a local or remote host",
