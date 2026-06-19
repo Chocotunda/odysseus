@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, func, text
+from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, UniqueConstraint, func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
@@ -1700,6 +1700,32 @@ class PlanItem(TimestampMixin, Base):
     __table_args__ = (
         Index('ix_plan_items_owner_day', 'owner', 'planned_day'),
         Index('ix_plan_items_owner_status', 'owner', 'status'),
+    )
+
+
+class Link(TimestampMixin, Base):
+    """A typed edge between two nodes — the whole graph spine.
+
+    `(from_type, from_id, rel, to_type, to_id)` is a directed, typed edge.
+    Backlinks are just the reverse query (`links_to`). Polymorphic by design so
+    every node type (note/meeting/person/task/email/doc/...) links the same way
+    with no new schema. Owner-scoped: a new isolation boundary.
+    """
+    __tablename__ = "links"
+
+    id        = Column(String, primary_key=True, index=True)
+    owner     = Column(String, nullable=True, index=True)
+    from_type = Column(String, nullable=False)
+    from_id   = Column(String, nullable=False)
+    rel       = Column(String, nullable=False)
+    to_type   = Column(String, nullable=False)
+    to_id     = Column(String, nullable=False)
+
+    __table_args__ = (
+        Index('ix_links_from', 'owner', 'from_type', 'from_id'),
+        Index('ix_links_to', 'owner', 'to_type', 'to_id'),
+        UniqueConstraint('owner', 'from_type', 'from_id', 'rel', 'to_type', 'to_id',
+                         name='uq_links_edge'),
     )
 
 
