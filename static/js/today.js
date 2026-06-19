@@ -52,6 +52,15 @@ async function _completeTask(id) {
   await fetch(`${API_BASE}/api/planner/items/${encodeURIComponent(id)}/complete`,
               { method: 'POST', credentials: 'same-origin' });
 }
+async function _scheduleTask(id, day, start) {
+  await fetch(`${API_BASE}/api/today/task/${encodeURIComponent(id)}/schedule`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planned_day: day, planned_start: start }),
+  });
+}
+function _snap15(min) { return Math.max(0, Math.round(min / 15) * 15); }
+function _hhmm(min) { return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`; }
 
 function _fmtTime(hhmm) { return hhmm || ''; }
 function _evTime(iso) {
@@ -69,7 +78,8 @@ function _areaChip(item) {
 function _taskRow(t, cls) {
   const est = t.estimate_minutes ? ` &middot; ~${t.estimate_minutes}m` : '';
   const due = t.due_date ? ` &middot; due ${_esc(t.due_date)}` : '';
-  return `<div class="today-item ${cls}" data-task="${_esc(t.id)}">` +
+  const draggable = cls.includes('today-rail-item') ? ' draggable="true"' : '';
+  return `<div class="today-item ${cls}"${draggable} data-task="${_esc(t.id)}">` +
     `<span class="today-item-title">${_esc(t.title || '(untitled)')}</span>` +
     _areaChip(t) +
     `<span class="today-item-meta">${_esc(t.priority || '')}${est}${due}</span></div>`;
@@ -125,7 +135,7 @@ function _renderTimeline(v) {
   v.scheduled_tasks.forEach(t => {
     const [hh, mm] = (t.planned_start || `${String(HOUR_START).padStart(2, '0')}:00`).split(':').map(Number);
     blocks += place(hh * 60 + mm, t.estimate_minutes || DEFAULT_EST, t.title || '(task)',
-                    'today-block-task', `data-task="${_esc(t.id)}"`);
+                    'today-block-task', `data-task="${_esc(t.id)}" draggable="true"`);
   });
   const rail = v.unscheduled_tasks.concat(v.is_today ? v.overdue_tasks : [])
     .map(t => _taskRow(t, 'today-rail-item')).join('') || `<div class="today-empty">nothing unscheduled</div>`;
@@ -144,6 +154,29 @@ function _render(v) {
     elm.addEventListener('click', () => _showTaskDetail(elm.getAttribute('data-task'))));
   document.querySelectorAll('#today-body [data-meeting]').forEach(elm =>
     elm.addEventListener('click', () => _showMeetingDetail(v, elm.getAttribute('data-meeting'))));
+  const blocksEl = document.querySelector('.today-blocks');
+  if (blocksEl) {
+    document.querySelectorAll('#today-body [data-task][draggable="true"]').forEach(elm => {
+      elm.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/task', elm.getAttribute('data-task')));
+    });
+    blocksEl.addEventListener('dragover', (e) => e.preventDefault());
+    blocksEl.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const id = e.dataTransfer.getData('text/task'); if (!id) return;
+      const rect = blocksEl.getBoundingClientRect();
+      const min = _snap15((e.clientY - rect.top) / PX_PER_MIN) + HOUR_START * 60;
+      await _scheduleTask(id, _day, _hhmm(min)); _reload();
+    });
+    const railEl = document.querySelector('.today-rail');
+    if (railEl) {
+      railEl.addEventListener('dragover', (e) => e.preventDefault());
+      railEl.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData('text/task'); if (!id) return;
+        await _scheduleTask(id, _day, null); _reload();   // back to unscheduled
+      });
+    }
+  }
 }
 
 async function _reload() {

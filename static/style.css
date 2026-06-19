@@ -38106,6 +38106,8 @@ body.theme-frosted .modal {
   font-size: 11px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); }
 .today-block-meeting { background: color-mix(in srgb, var(--red) 18%, var(--card)); }
 .today-block-task { background: var(--card); }
+.today-rail-item, .today-block-task { cursor: grab; }
+.today-blocks.drag-over { outline: 2px dashed var(--red); outline-offset: -2px; }
 .today-rail { width: 240px; flex-shrink: 0; }
 .today-detail { position: fixed; top: 0; right: 0; width: 340px; height: 100%; background: var(--card);
   border-left: 1px solid var(--border); transform: translateX(100%); transition: transform .18s; z-index: 1001; }
