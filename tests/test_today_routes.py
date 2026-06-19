@@ -75,3 +75,39 @@ def test_task_detail_cross_owner_404(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         _ep(router, "/task/{task_id}", "GET")(_request("bob"), "t1")
     assert ei.value.status_code == 404
+
+
+def test_schedule_sets_and_clears(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(today_routes, "SessionLocal", SF)
+    db = SF(); db.add(PlanItem(id="t1", owner="alice", title="T", status="open")); db.commit(); db.close()
+    router = today_routes.setup_today_routes()
+    ep = _ep(router, "/task/{task_id}/schedule", "POST")
+
+    out = ep(_request("alice"), "t1", today_routes.ScheduleBody(planned_day="2026-06-20", planned_start="09:30"))
+    assert out["planned_day"] == "2026-06-20" and out["planned_start"] == "09:30"
+
+    out2 = ep(_request("alice"), "t1", today_routes.ScheduleBody(planned_day="2026-06-20", planned_start=None))
+    assert out2["planned_start"] is None
+
+
+def test_schedule_bad_time_400(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(today_routes, "SessionLocal", SF)
+    db = SF(); db.add(PlanItem(id="t1", owner="alice", title="T", status="open")); db.commit(); db.close()
+    router = today_routes.setup_today_routes()
+    with pytest.raises(HTTPException) as ei:
+        _ep(router, "/task/{task_id}/schedule", "POST")(
+            _request("alice"), "t1", today_routes.ScheduleBody(planned_day="2026-06-20", planned_start="9am"))
+    assert ei.value.status_code == 400
+
+
+def test_schedule_cross_owner_404(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(today_routes, "SessionLocal", SF)
+    db = SF(); db.add(PlanItem(id="t1", owner="alice", title="T", status="open")); db.commit(); db.close()
+    router = today_routes.setup_today_routes()
+    with pytest.raises(HTTPException) as ei:
+        _ep(router, "/task/{task_id}/schedule", "POST")(
+            _request("bob"), "t1", today_routes.ScheduleBody(planned_day="2026-06-20", planned_start="09:00"))
+    assert ei.value.status_code == 404

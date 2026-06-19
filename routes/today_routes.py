@@ -94,4 +94,21 @@ def setup_today_routes() -> APIRouter:
         finally:
             db.close()
 
+    @router.post("/task/{task_id}/schedule")
+    def schedule_task(request: Request, task_id: str, body: ScheduleBody):
+        if not _valid_date(body.planned_day):
+            raise HTTPException(status_code=400, detail="planned_day must be YYYY-MM-DD")
+        if body.planned_start is not None and not _valid_time(body.planned_start):
+            raise HTTPException(status_code=400, detail="planned_start must be HH:MM")
+        db = SessionLocal()
+        try:
+            t = _load_task(db, request, task_id)
+            t.planned_day = body.planned_day
+            t.planned_start = body.planned_start
+            db.commit()
+            db.refresh(t)
+            return {"id": t.id, "planned_day": t.planned_day, "planned_start": t.planned_start}
+        finally:
+            db.close()
+
     return router
