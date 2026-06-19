@@ -131,6 +131,9 @@
           "<rect x='18' y='3' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
           "<rect x='3' y='18' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
           "<rect x='18' y='18' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>",
+        '/today':
+          "<rect x='4' y='5' width='24' height='22' rx='2' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
+          "<path d='M20 3 L20 7 M12 3 L12 7 M4 13 L28 13' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>",
         '/cookbook':
           "<path d='M5 8 L5 26 A2 2 0 0 0 7 28 L25 28 A2 2 0 0 0 27 26 L27 8' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linejoin='round'/>" +
           "<path d='M9 4 L23 4 L23 8 L9 8 Z' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linejoin='round'/>" +
@@ -171,6 +174,7 @@
         '/planner': 'Planner — Odysseus',
         '/people': 'People — Odysseus',
         '/areas': 'Areas — Odysseus',
+        '/today': 'Today — Odysseus',
         '/cookbook': 'Cookbook — Odysseus',
         '/email': 'Email — Odysseus',
         '/memory': 'Memory — Odysseus',
@@ -943,6 +947,14 @@
             <rect x="14" y="14" width="7" height="7" rx="1"/>
           </svg>
           <span class="grow">Areas</span>
+        </div>
+        <div class="list-item" id="tool-today-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+          <span class="grow">Today</span>
         </div>
         <div class="list-item" id="tool-tasks-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"

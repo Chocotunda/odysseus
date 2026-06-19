@@ -38065,3 +38065,56 @@ body.theme-frosted .modal {
 .mnote-footer-btns { display: flex; gap: 8px; flex-shrink: 0; }
 .mnote-btn-secondary { opacity: 0.75; }
 .mnote-btn-secondary:hover { opacity: 1; }
+
+/* --- /today daily day-planner ------------------------------------------- */
+.today-panel { position: fixed; inset: 0; z-index: 1000; background: var(--bg);
+  display: flex; flex-direction: column; font-family: 'Fira Code', monospace; }
+.today-header { display: flex; align-items: center; gap: 14px; padding: 14px 18px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.today-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--fg); }
+.today-nav { display: flex; align-items: center; gap: 6px; }
+.today-now-btn, .today-view-btn { background: var(--card); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  font-family: inherit; font-size: 12px; }
+.today-view-btn.active { border-color: var(--red); color: var(--red); }
+.today-date-input { background: var(--card); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 6px; font-family: inherit; }
+.today-views { margin-left: auto; display: flex; gap: 6px; }
+.today-body { flex: 1; overflow: auto; padding: 16px 18px; }
+.today-section { margin-bottom: 18px; }
+.today-section-header { display: flex; align-items: center; gap: 8px; font-weight: 600;
+  color: var(--fg); margin-bottom: 8px; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; }
+.today-count { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0 7px; font-size: 11px; color: var(--fg); }
+.today-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--card); margin-bottom: 6px; }
+.today-item:hover { border-color: var(--red); }
+.today-item-title { color: var(--fg); flex: 1; }
+.today-item-time { color: var(--fg); opacity: .8; min-width: 52px; }
+.today-item-meta { color: var(--fg); opacity: .6; font-size: 11px; }
+.today-overdue { border-left: 3px solid var(--red); }
+.today-area-chip { font-size: 10px; border: 1px solid; border-radius: 8px; padding: 0 6px; opacity: .85; }
+.today-empty { color: var(--fg); opacity: .5; font-size: 12px; padding: 6px 2px; }
+.today-capacity { color: var(--fg); opacity: .7; font-size: 12px; margin-top: 6px; }
+.today-timeline-wrap { display: flex; gap: 16px; align-items: flex-start; }
+.today-grid { flex: 1; position: relative; }
+.today-hours { position: relative; }
+.today-hour { position: relative; border-top: 1px solid var(--border); }
+.today-hour-label { position: absolute; left: 0; top: -8px; font-size: 10px; color: var(--fg); opacity: .5; }
+.today-blocks { position: absolute; top: 0; left: 56px; right: 0; bottom: 0; }
+.today-block { position: absolute; left: 0; right: 0; border-radius: 5px; padding: 3px 6px;
+  font-size: 11px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); }
+.today-block-meeting { background: color-mix(in srgb, var(--red) 18%, var(--card)); }
+.today-block-task { background: var(--card); }
+.today-rail { width: 240px; flex-shrink: 0; }
+.today-detail { position: fixed; top: 0; right: 0; width: 340px; height: 100%; background: var(--card);
+  border-left: 1px solid var(--border); transform: translateX(100%); transition: transform .18s; z-index: 1001; }
+.today-detail.open { transform: translateX(0); }
+.today-detail-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 14px; border-bottom: 1px solid var(--border); color: var(--fg); font-weight: 600; }
+.today-detail-body { padding: 14px; }
+.today-detail-row { color: var(--fg); margin-bottom: 8px; font-size: 13px; }
+.today-detail-notes { color: var(--fg); opacity: .8; font-size: 12px; white-space: pre-wrap; margin-top: 10px; }
+.today-detail-actions { padding: 14px; }
+.today-complete-btn { background: var(--red); color: #fff; border: none; border-radius: 6px;
+  padding: 7px 14px; cursor: pointer; font-family: inherit; }

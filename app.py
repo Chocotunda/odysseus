@@ -776,6 +776,10 @@ app.include_router(setup_meeting_notes_routes())
 from routes.area_routes import setup_area_routes
 app.include_router(setup_area_routes())
 
+# Today daily day-planner
+from routes.today_routes import setup_today_routes
+app.include_router(setup_today_routes())
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
@@ -879,6 +883,10 @@ async def serve_areas(request: Request):
 
 @app.get("/areas/{area_id}")
 async def serve_area(request: Request, area_id: str):
+    return await serve_index(request)
+
+@app.get("/today")
+async def serve_today(request: Request):
     return await serve_index(request)
 
 @app.get("/backgrounds")
