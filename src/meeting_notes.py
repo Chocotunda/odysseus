@@ -91,6 +91,9 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
         note = db.query(Note).filter(Note.id == note_id).first()
         if not note or (owner is not None and note.owner != owner):
             raise ValueError("note not found")
+        # TODO(next-slice): when note editing ships, clean stale note_of/about/attended_by
+        # edges here (remove_links_for the note) before re-adding, or changing the linked
+        # person/meeting on re-save will orphan the old edges.
         note.title, note.content = title, content
         note.items = json.dumps(action_items)
     else:

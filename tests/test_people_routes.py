@@ -85,6 +85,57 @@ def test_person_page_aggregates_open_tasks_meetings_notes(monkeypatch):
     assert len(page["notes"]) == 1
 
 
+def test_person_page_open_tasks_include_note_title_and_overdue(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(people_routes, "SessionLocal", SF)
+    import src.meeting_notes as MN
+    router = people_routes.setup_people_routes()
+    p = _ep(router, "", "POST")(_request("alice"), people_routes.PersonCreate(name="Wiggert"))
+
+    db = SF()
+    from core.database import CalendarCal, CalendarEvent, utcnow_naive
+    db.add(CalendarCal(id="c2", owner="alice", name="Work"))
+    db.add(CalendarEvent(uid="m2", calendar_id="c2", summary="Catchup",
+                         dtstart=utcnow_naive(), dtend=utcnow_naive()))
+    db.commit()
+    # Task 1: clearly overdue (2020-01-01), promoted from a meeting note titled "Old 1:1"
+    MN.save_meeting_note(db, "alice", title="Old 1:1", content="old notes",
+                         action_items=[{"text": "Send overdue deck", "done": False}],
+                         person_id=p["id"], event_uid="m2", make_tasks=True)
+    # Task 2: due today (not overdue), note titled "Recent 1:1"
+    MN.save_meeting_note(db, "alice", title="Recent 1:1", content="recent notes",
+                         action_items=[{"text": "Send current deck", "done": False}],
+                         person_id=p["id"], event_uid="m2", make_tasks=True)
+    db.close()
+
+    # Back-date the first task to a clearly past date
+    from datetime import datetime
+    db2 = SF()
+    from core.database import PlanItem
+    overdue_task = db2.query(PlanItem).filter(PlanItem.title == "Send overdue deck").first()
+    assert overdue_task is not None
+    overdue_task.due_date = "2020-01-01"
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    current_task = db2.query(PlanItem).filter(PlanItem.title == "Send current deck").first()
+    assert current_task is not None
+    current_task.due_date = today_str
+    db2.commit()
+    db2.close()
+
+    page = _ep(router, "/{person_id}/page", "GET")(_request("alice"), p["id"])
+    tasks_by_title = {t["title"]: t for t in page["open_tasks"]}
+
+    # overdue task: note_title matches source note, overdue=True
+    overdue = tasks_by_title["Send overdue deck"]
+    assert overdue["note_title"] == "Old 1:1", f"expected 'Old 1:1', got {overdue['note_title']!r}"
+    assert overdue["overdue"] is True, "task due 2020-01-01 must be overdue"
+
+    # current task: note_title matches source note, overdue=False (due today)
+    current = tasks_by_title["Send current deck"]
+    assert current["note_title"] == "Recent 1:1", f"expected 'Recent 1:1', got {current['note_title']!r}"
+    assert current["overdue"] is False, "task due today must not be overdue"
+
+
 def test_person_page_excludes_other_persons_and_owners(monkeypatch):
     SF = _sf()
     monkeypatch.setattr(people_routes, "SessionLocal", SF)

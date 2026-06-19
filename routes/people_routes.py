@@ -114,6 +114,7 @@ def setup_people_routes():
 
     @router.get("/{person_id}/page")
     def person_page(request: Request, person_id: str):
+        from datetime import datetime
         from src.links import links_to, NODE_PERSON, NODE_TASK, NODE_NOTE, NODE_MEETING, REL_ABOUT, REL_NOTE_OF, REL_ATTENDED_BY
         from core.database import PlanItem, Note, CalendarEvent
         db = SessionLocal()
@@ -128,6 +129,15 @@ def setup_people_routes():
             # overdue-first: items with a due_date sort before those without, ascending
             tasks.sort(key=lambda t: (t.due_date is None, t.due_date or ""))
 
+            # Batch-fetch note titles for tasks that have a source_note_id (no N+1).
+            today = datetime.now().strftime("%Y-%m-%d")
+            source_note_ids = {t.source_note_id for t in tasks if t.source_note_id}
+            note_title_map: Dict[str, str] = {}
+            if source_note_ids:
+                note_rows = (db.query(Note.id, Note.title)
+                             .filter(Note.id.in_(source_note_ids)).all())
+                note_title_map = {row.id: row.title for row in note_rows}
+
             note_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)
                         if e.from_type == NODE_NOTE]
             notes = db.query(Note).filter(Note.id.in_(note_ids)).all() if note_ids else []
@@ -139,7 +149,9 @@ def setup_people_routes():
             return {
                 "person": _person_to_dict(person),
                 "open_tasks": [{"id": t.id, "title": t.title, "due_date": t.due_date,
-                                "priority": t.priority, "source_note_id": t.source_note_id} for t in tasks],
+                                "priority": t.priority, "source_note_id": t.source_note_id,
+                                "note_title": note_title_map.get(t.source_note_id) if t.source_note_id else None,
+                                "overdue": bool(t.due_date and t.due_date < today)} for t in tasks],
                 "meetings": [{"uid": m.uid, "summary": m.summary,
                               "dtstart": m.dtstart.isoformat() if m.dtstart else None} for m in meetings],
                 "notes": [{"id": n.id, "title": n.title} for n in notes],
