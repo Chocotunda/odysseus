@@ -774,6 +774,35 @@ def _migrate_add_document_archived_column():
             pass
 
 
+def _migrate_add_plan_item_planned_start_column():
+    """Add `planned_start` ('HH:MM' time-block) to plan_items. Guarded + idempotent.
+
+    create_all() only creates missing tables; it does NOT alter an existing
+    plan_items table, so this column must be added explicitly for DBs created
+    before the /today day-planner slice.
+    """
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(plan_items)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "planned_start" not in columns:
+            conn.execute("ALTER TABLE plan_items ADD COLUMN planned_start VARCHAR")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'planned_start' to plan_items")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"plan_items.planned_start migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _migrate_add_owner_column():
     """Add owner column to sessions table if it doesn't exist."""
     import sqlite3
@@ -1935,6 +1964,7 @@ def init_db():
     _migrate_add_owner_column()
     _migrate_add_document_archived_column()
     _migrate_add_last_message_at_column()
+    _migrate_add_plan_item_planned_start_column()
     _migrate_add_folder_column()
     _migrate_add_token_columns()
     _migrate_add_mode_column()
