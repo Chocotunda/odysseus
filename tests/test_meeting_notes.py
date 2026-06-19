@@ -60,6 +60,18 @@ def test_promotion_is_idempotent():
     assert db.query(PlanItem).filter(PlanItem.title == "Send deck").count() == 1
 
 
+def test_save_with_area_stamps_note_and_tasks():
+    db = _db()
+    out = MN.save_meeting_note(
+        db, "alice", title="1:1", content="",
+        action_items=[{"text": "Send deck", "done": False}],
+        person_id="p1", event_uid="m1", make_tasks=True, area_id="areaWork")
+    note_id = out["note"]["id"]
+    assert [e.to_id for e in L.links_from(db, "alice", L.NODE_NOTE, note_id, rel=L.REL_IN_AREA)] == ["areaWork"]
+    task = db.query(PlanItem).filter(PlanItem.title == "Send deck").one()
+    assert [e.to_id for e in L.links_from(db, "alice", L.NODE_TASK, task.id, rel=L.REL_IN_AREA)] == ["areaWork"]
+
+
 async def test_enrich_writes_suggested_items(monkeypatch):
     db = _db()
     out = MN.save_meeting_note(db, "alice", title="1:1", content="Wiggert to send the deck by Friday.",

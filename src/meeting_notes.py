@@ -53,7 +53,8 @@ def _max_ordinal(db, owner: Optional[str]) -> int:
 
 def promote_action_item(db, owner: Optional[str], note_id: str, title: str,
                         *, person_id: Optional[str] = None,
-                        due_date: Optional[str] = None) -> Dict[str, Any]:
+                        due_date: Optional[str] = None,
+                        area_id: Optional[str] = None) -> Dict[str, Any]:
     """Create a PlanItem from an action item, idempotent on (note, title)."""
     title = (title or "").strip()
     # idempotency: a task already promoted from this note with this title?
@@ -79,13 +80,16 @@ def promote_action_item(db, owner: Optional[str], note_id: str, title: str,
     L.add_link(db, owner, L.NODE_TASK, item.id, L.REL_FROM_NOTE, L.NODE_NOTE, note_id)
     if person_id:
         L.add_link(db, owner, L.NODE_TASK, item.id, L.REL_ABOUT, L.NODE_PERSON, person_id)
+    if area_id:
+        L.set_area(db, owner, L.NODE_TASK, item.id, area_id)
     return _task_dict(item)
 
 
 def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str = "",
                       action_items: Optional[List[Dict[str, Any]]] = None,
                       person_id: Optional[str] = None, event_uid: Optional[str] = None,
-                      make_tasks: bool = False, note_id: Optional[str] = None) -> Dict[str, Any]:
+                      make_tasks: bool = False, note_id: Optional[str] = None,
+                      area_id: Optional[str] = None) -> Dict[str, Any]:
     action_items = action_items or []
     if note_id:
         note = db.query(Note).filter(Note.id == note_id).first()
@@ -108,12 +112,15 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
         L.add_link(db, owner, L.NODE_NOTE, note.id, L.REL_ABOUT, L.NODE_PERSON, person_id)
     if event_uid and person_id:
         L.add_link(db, owner, L.NODE_MEETING, event_uid, L.REL_ATTENDED_BY, L.NODE_PERSON, person_id)
+    if area_id:
+        L.set_area(db, owner, L.NODE_NOTE, note.id, area_id)
 
     tasks = []
     if make_tasks:
         for it in action_items:
             if not it.get("done") and (it.get("text") or "").strip():
-                tasks.append(promote_action_item(db, owner, note.id, it["text"], person_id=person_id))
+                tasks.append(promote_action_item(db, owner, note.id, it["text"],
+                                                 person_id=person_id, area_id=area_id))
     return {"note": _note_dict(note), "tasks": tasks}
 
 

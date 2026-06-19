@@ -21,12 +21,14 @@ class MeetingNoteSave(BaseModel):
     event_uid: Optional[str] = None
     make_tasks: bool = False
     note_id: Optional[str] = None
+    area_id: Optional[str] = None
 
 
 class PromoteBody(BaseModel):
     title: str = ""
     person_id: Optional[str] = None
     due_date: Optional[str] = None
+    area_id: Optional[str] = None
 
 
 def setup_meeting_notes_routes():
@@ -60,7 +62,8 @@ def setup_meeting_notes_routes():
             result = MN.save_meeting_note(
                 db, owner, title=body.title, content=body.content,
                 action_items=body.action_items, person_id=body.person_id,
-                event_uid=body.event_uid, make_tasks=body.make_tasks, note_id=body.note_id)
+                event_uid=body.event_uid, make_tasks=body.make_tasks, note_id=body.note_id,
+                area_id=body.area_id)
         finally:
             db.close()
         background.add_task(MN.enrich_meeting_note, result["note"]["id"], owner)
@@ -85,7 +88,8 @@ def setup_meeting_notes_routes():
         db = SessionLocal()
         try:
             return MN.promote_action_item(db, owner, note_id, body.title,
-                                          person_id=body.person_id, due_date=body.due_date)
+                                          person_id=body.person_id, due_date=body.due_date,
+                                          area_id=body.area_id)
         finally:
             db.close()
 
