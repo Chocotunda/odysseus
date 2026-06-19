@@ -90,10 +90,21 @@ def _meetings_for_day(db, owner, day):
     if not cal_ids:
         return []
 
+    from sqlalchemy import or_, and_
     rows = (db.query(CalendarEvent)
-            .filter(CalendarEvent.calendar_id.in_(cal_ids),
-                    CalendarEvent.dtstart < end_dt,
-                    CalendarEvent.dtend > start_dt)
+            .filter(
+                CalendarEvent.calendar_id.in_(cal_ids),
+                CalendarEvent.status != "cancelled",
+                or_(
+                    # non-recurring: must overlap the day window
+                    and_(or_(CalendarEvent.rrule == "", CalendarEvent.rrule.is_(None)),
+                         CalendarEvent.dtstart < end_dt,
+                         CalendarEvent.dtend > start_dt),
+                    # recurring: dtstart before window end — _expand_rrule generates the in-window occurrences
+                    and_(CalendarEvent.rrule.isnot(None),
+                         CalendarEvent.rrule != "",
+                         CalendarEvent.dtstart < end_dt),
+                ))
             .all())
     out = []
     for ev in rows:

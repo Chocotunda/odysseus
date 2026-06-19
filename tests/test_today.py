@@ -98,3 +98,26 @@ def test_day_view_attaches_area_to_task_and_meeting():
     assert v["scheduled_tasks"][0]["area_name"] == "Work"
     assert v["scheduled_tasks"][0]["area_color"] == "#a60717"
     assert v["meetings"][0]["area_name"] == "Work"
+
+
+def test_day_view_includes_recurring_meeting_from_past():
+    db = _db()
+    db.add(CalendarCal(id="c1", owner="alice", name="Cal"))
+    # weekly series whose BASE dtstart is a week before the viewed day
+    db.add(CalendarEvent(uid="rec1", calendar_id="c1", summary="Weekly standup",
+                         dtstart=_on("2026-06-13", 9), dtend=_on("2026-06-13", 10),
+                         rrule="FREQ=WEEKLY"))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")  # 7 days later = an occurrence
+    assert any(m["summary"] == "Weekly standup" for m in v["meetings"])
+
+
+def test_day_view_excludes_cancelled_meeting():
+    db = _db()
+    db.add(CalendarCal(id="c1", owner="alice", name="Cal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Cancelled mtg",
+                         dtstart=_on("2026-06-20", 9), dtend=_on("2026-06-20", 10),
+                         status="cancelled"))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert all(m["summary"] != "Cancelled mtg" for m in v["meetings"])
