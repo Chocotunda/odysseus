@@ -26,6 +26,7 @@ import tasksModule from './js/tasks.js';
 import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import plannerModule from './js/planner.js';
+import peopleModule from './js/people.js';
 import adminModule from './js/admin.js';
 import settingsModule from './js/settings.js';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -931,6 +932,14 @@ function initializeEventListeners() {
     });
   }
 
+  // People tool button
+  const toolPeopleBtn = el('tool-people-btn');
+  if (toolPeopleBtn) {
+    toolPeopleBtn.addEventListener('click', () => {
+      if (peopleModule) peopleModule.openPeople();
+    });
+  }
+
   // URL-based panel routing — bookmark /calendar, /notes, /cookbook etc
   // and the matching tool opens automatically on page load.
   const urlPath = window.location.pathname;
@@ -1016,6 +1025,7 @@ function initializeEventListeners() {
       }
     },
     '/planner':  () => plannerModule && plannerModule.openPanel(),
+    '/people':   () => peopleModule && peopleModule.openPeople(),
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/email':    () => {
@@ -1056,7 +1066,12 @@ function initializeEventListeners() {
     '/tasks':    () => document.getElementById('tool-tasks-btn')?.click(),
     '/library':  () => sessionModule && sessionModule.openLibrary && sessionModule.openLibrary(),
   };
-  const _opener = _routeOpen[urlPath];
+  // /people/<id> deep-link: not in the exact-key map, so check the prefix.
+  const _peopleDetailMatch = /^\/people\/(.+)$/.exec(urlPath);
+  const _opener = _routeOpen[urlPath] ||
+    (_peopleDetailMatch && peopleModule
+      ? () => peopleModule.openPerson(_peopleDetailMatch[1])
+      : null);
   // Defer the opener — at this point in init, the modules whose handlers
   // we trigger (#rail-new-session click handler, the email-section header
   // click handler in emailInbox, sessionModule's loaded session list) are
