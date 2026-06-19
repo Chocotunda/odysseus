@@ -726,11 +726,17 @@ body.bg-pattern-sparkles {
     }
     .rail-notes-badge.fired {
       background: var(--red);
+      /* Static glow painted once (the 1px ring keeps the badge legible over
+         the rail). The pulse itself uses opacity + transform below — NOT an
+         animated box-shadow, which is a paint property that repaints this
+         layer every frame forever and pins the WebKit GPU process (see the
+         email-notif-breathe note). opacity/transform are compositor-only. */
+      box-shadow: 0 0 0 1px var(--bg), 0 0 4px 1px color-mix(in srgb, var(--red) 45%, transparent);
       animation: rail-notes-pulse 1.6s ease-in-out infinite;
     }
     @keyframes rail-notes-pulse {
-      0%, 100% { box-shadow: 0 0 0 1px var(--bg), 0 0 0 0 color-mix(in srgb, var(--red) 50%, transparent); }
-      50% { box-shadow: 0 0 0 1px var(--bg), 0 0 0 4px color-mix(in srgb, var(--red) 15%, transparent); }
+      0%, 100% { opacity: 0.7; transform: scale(1); }
+      50%      { opacity: 1;   transform: scale(1.18); }
     }
     /* Main sidebar notes button — dot when a reminder has fired */
     .tool-notes-dot {
@@ -1208,6 +1214,14 @@ body.bg-pattern-sparkles {
     @media (prefers-reduced-motion: reduce) {
       #email-unread-dot.sidebar-notif-dot { animation: none; }
     }
+    /* Occlusion throttling is disabled in the macOS WKWebView wrapper, so CSS
+       infinite animations would composite at full rate forever while the app is
+       backgrounded. theme.js toggles body.app-blurred from the native focus
+       event (and window blur/visibilitychange in a plain browser); pause every
+       running animation while blurred. Resumes instantly on refocus. */
+    body.app-blurred *,
+    body.app-blurred *::before,
+    body.app-blurred *::after { animation-play-state: paused !important; }
     @media (max-width: 768px) {
       /* Nudge the sidebar notification dot up 1px on mobile so it lines
          up with the bigger section titles. vertical-align:middle drifts
@@ -8935,8 +8949,10 @@ body.hide-thinking .thinking-section { display: none !important; }
   top: 10px;
 }
 @keyframes thread-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 20%, transparent); }
-  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--red) 10%, transparent); }
+  /* opacity/transform only — the ring glow is the static box-shadow on the
+     dot above. Animating box-shadow repainted the layer every frame. */
+  0%, 100% { transform: scale(1);    opacity: 0.85; }
+  50%      { transform: scale(1.18); opacity: 1; }
 }
 .agent-thread-node.error .agent-thread-dot {
   background: var(--color-error);
@@ -18794,8 +18810,11 @@ body.gallery-selecting .gallery-dl-btn,
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--color-success, #4caf50);
-  /* Drives the breathing glow in the keyframes (matches email's dot). */
   --notif-glow: var(--color-success, #4caf50);
+  /* Static glow painted once; the pulse animates opacity/transform only.
+     Animating box-shadow here repainted the dot's layer every frame forever
+     (matches the email-notif/rail-notes fix). */
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--notif-glow, var(--accent, var(--red))) 55%, transparent);
   animation: cookbook-notif-pulse 2s ease-in-out infinite;
 }
 .cookbook-notif-dot.cookbook-notif-error {
@@ -18810,17 +18829,14 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-tab-error-dot {
   display: inline-block; width: 5px; height: 5px; border-radius: 50%;
   background: var(--color-error, #f44); margin-left: 4px; vertical-align: middle;
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--notif-glow, var(--color-error, #f44)) 55%, transparent);
   animation: cookbook-notif-pulse 2s ease-in-out infinite;
 }
 @keyframes cookbook-notif-pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--notif-glow, var(--accent, var(--red))) 60%, transparent);
-  }
-  50% {
-    opacity: 0.85;
-    box-shadow: 0 0 6px 2px color-mix(in srgb, var(--notif-glow, var(--accent, var(--red))) 55%, transparent);
-  }
+  /* opacity + transform are compositor-only; the glow is a static box-shadow
+     on the dot. Animating box-shadow repainted the layer every frame. */
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%      { opacity: 0.85; transform: scale(1.25); }
 }
 .cookbook-clear-btn {
   font-size: 10px !important;
@@ -21241,16 +21257,12 @@ body.gallery-selecting .gallery-dl-btn,
   50% { opacity: 1; }
 }
 @keyframes cookbook-srv-glow-ok {
-  0%, 100% {
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--color-success, #50fa7b) 22%, transparent),
-      0 0 8px 1px color-mix(in srgb, var(--color-success, #50fa7b) 45%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--color-success, #50fa7b) 38%, transparent),
-      0 0 14px 3px color-mix(in srgb, var(--color-success, #50fa7b) 75%, transparent);
-  }
+  /* Breathe via opacity only (compositor-only). The halo is the static
+     box-shadow on .cookbook-srv-status.ok; animating box-shadow size here
+     repainted the LED's layer every frame for the whole time a server was up.
+     opacity-only also avoids clobbering the hover transform: scale. */
+  0%, 100% { opacity: 0.75; }
+  50%      { opacity: 1; }
 }
 .cookbook-server-row input.hwfit-sf,
 .cookbook-server-row select.hwfit-sf {
@@ -28335,21 +28347,15 @@ button .spinner-whirlpool {
 .email-card-unread-dot {
   position: relative;
   top: 0;
+  /* Static white-tinted halo painted once (shows on any sender hue); the
+     breathe animates opacity/transform only. Animating box-shadow repainted
+     every unread dot's layer each frame. */
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.16);
   animation: email-card-unread-breathe 2.2s ease-in-out infinite;
 }
 @keyframes email-card-unread-breathe {
-  0%, 100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
-    opacity: 0.85;
-    transform: scale(1);
-  }
-  50% {
-    /* currentColor here is unreliable (background, not color) — use a
-       subtle white-tinted halo so the glow shows on any sender hue. */
-    box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.18);
-    opacity: 1;
-    transform: scale(1.15);
-  }
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
   .email-card-unread-dot { animation: none; }
@@ -31563,26 +31569,18 @@ body.notes-drag-mode .note-card-pin svg {
   }
 }
 /* Sticky outside glow — applied to the exact note whose reminder fired.
-   It stays until the user interacts with that card. */
+   It stays until the user interacts with that card. Steady glow (painted once)
+   rather than an infinite box-shadow pulse, which repainted the whole card's
+   layer every frame; the outline already marks the card, and a clean
+   compositor-only pulse on a card-sized element would need a pseudo-element. */
 .note-card.note-card-reminder-fired-sticky {
   position: relative;
   outline: 1px solid color-mix(in srgb, var(--accent, var(--red)) 36%, transparent);
   outline-offset: 2px;
-  animation: note-reminder-glow 1.6s ease-in-out infinite;
-}
-@keyframes note-reminder-glow {
-  0%, 100% {
-    box-shadow:
-      inset 0 2px 0 0 color-mix(in srgb, var(--fg) 14%, transparent),
-      0 0 0 3px color-mix(in srgb, var(--accent, var(--red)) 14%, transparent),
-      0 0 14px color-mix(in srgb, var(--accent, var(--red)) 18%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 0 2px 0 0 color-mix(in srgb, var(--fg) 14%, transparent),
-      0 0 0 6px color-mix(in srgb, var(--accent, var(--red)) 22%, transparent),
-      0 0 26px color-mix(in srgb, var(--accent, var(--red)) 30%, transparent);
-  }
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--fg) 14%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--accent, var(--red)) 20%, transparent),
+    0 0 20px color-mix(in srgb, var(--accent, var(--red)) 24%, transparent);
 }
 .note-card-selected {
   outline: 2px solid var(--accent);
@@ -32103,14 +32101,10 @@ body.notes-mobile-mode.notes-drag-mode .note-card-pin.active {
   margin-top: 2px;
   margin-bottom: 8px;
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-  /* Subtle idle glow so the field reads as "you can type here" without
-     the user having to click it first. Fades out the moment the user
-     hovers or focuses it. */
-  animation: notes-quick-pulse 2.8s ease-in-out infinite;
-}
-@keyframes notes-quick-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, var(--red)) 0%, transparent); }
-  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, var(--red)) 14%, transparent); }
+  /* Subtle idle glow so the field reads as "you can type here". Steady
+     (painted once) instead of an infinite box-shadow pulse that repainted the
+     bar every frame; the :hover/:focus rules still override it. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
 }
 .notes-quick-add:hover {
   border-color: color-mix(in srgb, var(--accent, var(--red)) 55%, var(--border));
@@ -36510,16 +36504,10 @@ body.research-panel-view #research-divider { display:none; }
   animation: research-badge-breathe 2.4s ease-in-out infinite;
 }
 @keyframes research-badge-breathe {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 0.85;
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-primary, var(--red)) 55%, transparent);
-  }
-  50% {
-    transform: scale(1.35);
-    opacity: 1;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-primary, var(--red)) 0%, transparent);
-  }
+  /* compositor-only; the prior box-shadow keyframes were ~0 alpha (invisible),
+     so dropping them changes nothing visually but stops the per-frame repaint. */
+  0%, 100% { transform: scale(1);    opacity: 0.85; }
+  50%      { transform: scale(1.35); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .research-badge { animation: none; }
@@ -36550,6 +36538,9 @@ body.research-panel-view #research-divider { display:none; }
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--color-success, #4caf50);
+  /* Static glow painted once (cookbook-notif-pulse now animates opacity/
+     transform only — this dot doesn't set --notif-glow, so it needs its own). */
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--color-success, #4caf50) 55%, transparent);
   animation: cookbook-notif-pulse 2s ease-in-out infinite;
   position: relative;
   top: -1px;

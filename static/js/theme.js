@@ -409,7 +409,29 @@ const _CANVAS_PATTERNS = { synapse: _initSynapse, rain: _initRain, constellation
 // stop redrawing entirely (idle GPU ~7% -> ~0) and just poll to resume. In a
 // plain browser the event never fires, so it defaults to running.
 let _bgUnfocused = false;
-window.addEventListener('ody-native-focus', (e) => { _bgUnfocused = !e.detail; });
+// Consolidated focus gate. The native macOS wrapper's `ody-native-focus`
+// CustomEvent stays AUTHORITATIVE (occlusion signals are suppressed inside the
+// wrapped WKWebView, so window blur/visibilitychange are unreliable there). In
+// a plain browser the wrapper event never fires, so we also listen to the
+// standard window blur/focus + document visibilitychange so the same throttling
+// works everywhere. Besides gating the canvas RAF (_bgUnfocused), we toggle
+// body.app-blurred so CSS can pause its infinite animations while unfocused.
+function _setAppFocused(focused) {
+  _bgUnfocused = !focused;
+  try { document.body.classList.toggle('app-blurred', !focused); } catch (_) {}
+}
+// Once the native wrapper has spoken, it is AUTHORITATIVE: the standard
+// window blur/focus + visibilitychange events are unreliable inside the wrapped
+// WKWebView (they fire spuriously even while the app is genuinely focused), so
+// they must not clobber the native signal. We latch this flag on the first
+// ody-native-focus event and make the standard listeners no-op thereafter. In a
+// plain browser/PWA the native event never fires, so the flag stays false and
+// the standard events drive the focus gate as a fallback.
+let _nativeFocusSeen = false;
+window.addEventListener('ody-native-focus', (e) => { _nativeFocusSeen = true; _setAppFocused(!!e.detail); });
+window.addEventListener('blur', () => { if (_nativeFocusSeen) return; _setAppFocused(false); });
+window.addEventListener('focus', () => { if (_nativeFocusSeen) return; _setAppFocused(true); });
+document.addEventListener('visibilitychange', () => { if (_nativeFocusSeen) return; _setAppFocused(!document.hidden); });
 function _bgRaf(fn) {
   if (_bgUnfocused || document.hidden) { setTimeout(() => _bgRaf(fn), 400); return; }
   setTimeout(() => requestAnimationFrame(fn), 33);
