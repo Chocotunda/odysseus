@@ -37871,3 +37871,158 @@ body.theme-frosted .modal {
   padding: 10px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
   display: flex; gap: 8px;
 }
+
+/* ── Meeting-note composer modal (.mnote-*) ── */
+.mnote-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.mnote-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: min(680px, 94vw);
+  max-height: 90vh;
+  margin-top: 5vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+.mnote-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mnote-title {
+  flex: 1; font-size: 14px; font-weight: 600; color: var(--fg);
+  display: flex; align-items: center; gap: 8px;
+}
+.mnote-close-btn {
+  background: transparent; border: none; cursor: pointer;
+  height: 24px; width: 24px; padding: 0; color: var(--fg); opacity: 0.6;
+  flex-shrink: 0;
+}
+.mnote-close-btn:hover { opacity: 1; }
+.mnote-body {
+  flex: 1; overflow-y: auto; padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.mnote-field-group { display: flex; flex-direction: column; gap: 4px; }
+.mnote-field-group.mnote-field-grow { flex: 1; }
+.mnote-label {
+  font-size: 11px; font-weight: 600; opacity: 0.6; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mnote-input {
+  width: 100%; box-sizing: border-box;
+}
+.mnote-textarea {
+  width: 100%; box-sizing: border-box;
+  min-height: 90px; resize: vertical;
+  font-family: inherit;
+}
+.mnote-field-hint { font-size: 11px; opacity: 0.5; min-height: 14px; }
+/* Picker dropdown */
+.mnote-picker-wrap { position: relative; }
+.mnote-picker-list {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  max-height: 180px; overflow-y: auto;
+  margin-top: 3px;
+}
+.mnote-picker-item {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 7px 10px; cursor: pointer; font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mnote-picker-item:last-child { border-bottom: none; }
+.mnote-picker-item:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.mnote-picker-item-name { color: var(--fg); flex: 1; min-width: 0; word-break: break-word; }
+.mnote-picker-item-sub { font-size: 10px; opacity: 0.5; white-space: nowrap; flex-shrink: 0; }
+.mnote-picker-create .mnote-picker-item-name { color: var(--red); }
+/* Action items list */
+.mnote-items-list {
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); min-height: 32px;
+  padding: 4px 0;
+}
+.mnote-items-empty { font-size: 11px; opacity: 0.4; padding: 6px 10px; }
+.mnote-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mnote-item:last-child { border-bottom: none; }
+.mnote-item-check { cursor: pointer; flex-shrink: 0; }
+.mnote-item-text { flex: 1; min-width: 0; word-break: break-word; color: var(--fg); }
+.mnote-item-done { opacity: 0.45; text-decoration: line-through; }
+.mnote-item-remove {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--fg); opacity: 0.3; padding: 0; font-size: 11px; line-height: 1;
+  flex-shrink: 0;
+}
+.mnote-item-remove:hover { opacity: 0.8; color: var(--red); }
+.mnote-add-item-row {
+  display: flex; gap: 6px; margin-top: 6px;
+}
+.mnote-new-item-input { flex: 1; }
+.mnote-add-item-btn {
+  flex-shrink: 0; height: 32px; padding: 0 14px; font-size: 12px;
+}
+/* Results (promoted task chips) */
+.mnote-results {
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.mnote-results-label {
+  font-size: 11px; font-weight: 600; opacity: 0.5; text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 6px;
+}
+.mnote-results-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mnote-task-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px;
+  font-size: 11px; color: var(--fg); white-space: nowrap;
+}
+/* AI candidate chips */
+.mnote-candidates {
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.mnote-candidates-label {
+  font-size: 11px; font-weight: 600; opacity: 0.5; text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 6px;
+}
+.mnote-candidates-list { display: flex; flex-direction: column; gap: 4px; }
+.mnote-candidate {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px;
+  font-size: 12px; opacity: 0.7;
+}
+.mnote-candidate:hover { opacity: 1; }
+.mnote-candidate-title { flex: 1; min-width: 0; word-break: break-word; color: var(--fg); }
+.mnote-candidate-add {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 10px; padding: 2px 8px;
+  font-size: 10px; cursor: pointer; color: var(--fg); white-space: nowrap;
+}
+.mnote-candidate-add:hover { border-color: var(--fg); opacity: 1; }
+.mnote-candidate-add:disabled { opacity: 0.4; cursor: not-allowed; }
+.mnote-candidate-dismiss {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--fg); opacity: 0.35; padding: 0; flex-shrink: 0;
+}
+.mnote-candidate-dismiss:hover { opacity: 0.8; color: var(--red); }
+.mnote-candidate-done { opacity: 0.45; }
+.mnote-candidate-promoted { font-size: 10px; opacity: 0.6; margin-left: 4px; }
+/* Footer */
+.mnote-footer {
+  padding: 10px 14px; border-top: 1px solid var(--border);
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+}
+.mnote-err { flex: 1; font-size: 11px; color: var(--red); min-height: 16px; }
+.mnote-footer-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.mnote-btn-secondary { opacity: 0.75; }
+.mnote-btn-secondary:hover { opacity: 1; }

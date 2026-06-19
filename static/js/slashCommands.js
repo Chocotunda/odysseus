@@ -6006,6 +6006,17 @@ const COMMANDS = {
     handler: (args, ctx) => _cmdToolPanel('people', args, ctx),
     usage: '/people'
   },
+  'meeting-note': {
+    alias: ['meetingnote', 'meeting-notes'],
+    category: 'Tools',
+    help: 'Open meeting-note composer',
+    handler: (_args, _ctx) => {
+      if (typeof window.openMeetingNote === 'function') window.openMeetingNote();
+      else console.warn('meetingNote module not loaded');
+      return true;
+    },
+    usage: '/meeting-note'
+  },
   tasks: {
     alias: [],
     category: 'Tools',
