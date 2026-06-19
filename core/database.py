@@ -1746,6 +1746,22 @@ class Person(TimestampMixin, Base):
     __table_args__ = (Index('ix_people_owner_archived', 'owner', 'archived'),)
 
 
+class Area(TimestampMixin, Base):
+    """A life-area / context (Work, Personal, Krishna Movements...) — a first-class
+    node. A node belongs to at most ONE area via a single `in_area` Link edge; the
+    Area dashboard aggregates its members via reverse-Link queries. Owner-scoped."""
+    __tablename__ = "areas"
+
+    id         = Column(String, primary_key=True, index=True)
+    owner      = Column(String, nullable=True, index=True)
+    name       = Column(String, nullable=False, default="")
+    color      = Column(String, nullable=True)   # stored hex (reuses UI palette)
+    sort_order = Column(Integer, default=0)
+    archived   = Column(Boolean, default=False)
+
+    __table_args__ = (Index('ix_areas_owner_archived', 'owner', 'archived'),)
+
+
 class CalendarCal(TimestampMixin, Base):
     """A calendar (e.g. 'Personal', 'TimeTree')."""
     __tablename__ = "calendars"

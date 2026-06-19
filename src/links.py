@@ -13,11 +13,13 @@ NODE_NOTE = "note"
 NODE_MEETING = "meeting"
 NODE_PERSON = "person"
 NODE_TASK = "task"
+NODE_AREA = "area"
 
 REL_NOTE_OF = "note_of"          # Note      -> Meeting
 REL_ABOUT = "about"             # Note/Task -> Person
 REL_FROM_NOTE = "from_note"      # Task      -> Note
 REL_ATTENDED_BY = "attended_by"  # Meeting   -> Person
+REL_IN_AREA = "in_area"          # <node>    -> Area  (single primary area)
 
 
 def add_link(db, owner: Optional[str], from_type: str, from_id: str,
@@ -63,5 +65,30 @@ def remove_links_for(db, owner: Optional[str], node_type: str, node_id: str) -> 
                 | ((Link.to_type == node_type) & (Link.to_id == node_id)))
         .delete(synchronize_session=False)
     )
+    db.commit()
+    return n
+
+
+def set_area(db, owner: Optional[str], node_type: str, node_id: str,
+             area_id: Optional[str]):
+    """Set a node's single primary Area. Deletes any existing in_area edge from
+    the node first (enforces 'exactly one'), then adds node -> area. A falsy
+    area_id just clears and returns None."""
+    db.query(Link).filter(
+        Link.owner == owner, Link.from_type == node_type,
+        Link.from_id == node_id, Link.rel == REL_IN_AREA,
+    ).delete(synchronize_session=False)
+    db.commit()
+    if not area_id:
+        return None
+    return add_link(db, owner, node_type, node_id, REL_IN_AREA, NODE_AREA, area_id)
+
+
+def clear_area(db, owner: Optional[str], node_type: str, node_id: str) -> int:
+    """Remove a node's in_area edge(s). Returns the number removed."""
+    n = db.query(Link).filter(
+        Link.owner == owner, Link.from_type == node_type,
+        Link.from_id == node_id, Link.rel == REL_IN_AREA,
+    ).delete(synchronize_session=False)
     db.commit()
     return n
