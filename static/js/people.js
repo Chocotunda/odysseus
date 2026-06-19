@@ -81,13 +81,33 @@ async function _fetchPeople() {
   }
 }
 
-async function _createPerson(name, role, email) {
+async function _createPerson(name, role, email, area_id) {
+  const body = { name, role, email };
+  if (area_id) body.area_id = area_id;
   const res = await fetch(`${API_BASE}/api/people`, {
     method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, role, email }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error('create failed');
+  return await res.json();
+}
+
+async function _fetchPerson(id) {
+  const res = await fetch(`${API_BASE}/api/people/${encodeURIComponent(id)}`, {
+    credentials: 'same-origin',
+  });
+  if (!res.ok) throw new Error('fetch person failed');
+  return await res.json();
+}
+
+async function _updatePerson(id, fields) {
+  const res = await fetch(`${API_BASE}/api/people/${encodeURIComponent(id)}`, {
+    method: 'PUT', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error('update person failed');
   return await res.json();
 }
 
@@ -131,7 +151,7 @@ async function _refreshPeopleList() {
   _renderPeopleList(people);
 }
 
-function _wireList(pane) {
+function _wireList(pane, createAreaPicker) {
   pane.querySelector('#people-close')?.addEventListener('click', () => closeList());
 
   pane.querySelector('#people-list')?.addEventListener('click', (e) => {
@@ -144,13 +164,13 @@ function _wireList(pane) {
     }
   });
 
-  const addForm = pane.querySelector('#people-add-form');
   const nameInput = pane.querySelector('#people-add-name');
   const roleInput = pane.querySelector('#people-add-role');
   const emailInput = pane.querySelector('#people-add-email');
   const addBtn = pane.querySelector('#people-add-btn');
   const addErr = pane.querySelector('#people-add-err');
 
+  // createAreaPicker is a promise that resolves to the picker handle
   addBtn?.addEventListener('click', async () => {
     const name = nameInput?.value.trim();
     if (!name) {
@@ -162,7 +182,13 @@ function _wireList(pane) {
     addBtn.disabled = true;
     addBtn.textContent = 'Adding…';
     try {
-      await _createPerson(name, roleInput?.value.trim() || '', emailInput?.value.trim() || '');
+      const picker = await createAreaPicker;
+      await _createPerson(
+        name,
+        roleInput?.value.trim() || '',
+        emailInput?.value.trim() || '',
+        picker ? picker.value : null
+      );
       if (nameInput) nameInput.value = '';
       if (roleInput) roleInput.value = '';
       if (emailInput) emailInput.value = '';
@@ -210,12 +236,21 @@ function openList() {
         `<input type="email" id="people-add-email" class="people-add-input" placeholder="Email (optional)" autocomplete="off">` +
         `<button class="people-add-btn" id="people-add-btn">+ Person</button>` +
       `</div>` +
+      `<div id="people-add-area-picker"></div>` +
       `<div class="people-add-err" id="people-add-err"></div>` +
     `</div>`;
 
   backdrop.appendChild(pane);
   document.body.appendChild(backdrop);
-  _wireList(pane);
+
+  // Mount area picker into the placeholder div; pass the promise so _wireList
+  // can await it when the user clicks "+ Person".
+  const pickerContainer = pane.querySelector('#people-add-area-picker');
+  const createAreaPicker = (window.AreaPicker && pickerContainer)
+    ? window.AreaPicker.mount(pickerContainer, {})
+    : Promise.resolve(null);
+
+  _wireList(pane, createAreaPicker);
 
   _refreshPeopleList();
 
@@ -329,6 +364,7 @@ function _buildDetailPane(data) {
       (role ? `<span class="person-meta-role">${_esc(role)}</span>` : '') +
       (email ? `<span class="person-meta-email">${_esc(email)}</span>` : '') +
     `</div>` +
+    `<div id="person-area-picker-wrap" class="person-area-picker-wrap"></div>` +
     `<div class="person-detail-body">` +
       _sectionHtml(ICON_TASK, 'Open items', 'person-tasks-body', openTasks, 'No open items', _taskRow) +
       _sectionHtml(ICON_MEETING, 'Meetings', 'person-meetings-body', meetings, 'No meetings recorded', _meetingRow) +
@@ -373,10 +409,30 @@ async function openDetail(id) {
   document.addEventListener('keydown', _escHandler);
 
   try {
-    const data = await _fetchPersonPage(id);
+    // Fetch both the page (tasks/meetings/notes) and the person record (area_id)
+    const [data, personRecord] = await Promise.all([
+      _fetchPersonPage(id),
+      _fetchPerson(id).catch(() => null),
+    ]);
     pane.innerHTML = _buildDetailPane(data);
     const personName = (data.person || {}).name || '';
     _wireDetail(pane, id, personName);
+
+    // Mount Area picker in the detail pane
+    const pickerWrap = pane.querySelector('#person-area-picker-wrap');
+    if (window.AreaPicker && pickerWrap) {
+      const areaId = (personRecord && (personRecord.area_id || (personRecord.person || {}).area_id)) || null;
+      window.AreaPicker.mount(pickerWrap, {
+        selectedId: areaId,
+        onChange: async function (newVal) {
+          try {
+            await _updatePerson(id, { area_id: newVal });
+          } catch (err) {
+            console.error('people: area update failed', err);
+          }
+        },
+      });
+    }
   } catch (e) {
     console.error('people: detail fetch failed', e);
     pane.innerHTML =

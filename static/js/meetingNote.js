@@ -137,10 +137,11 @@
     return await res.json();
   }
 
-  async function _promoteCandidate(noteId, title, personId, dueDate) {
+  async function _promoteCandidate(noteId, title, personId, dueDate, areaId) {
     const payload = { title };
     if (personId) payload.person_id = personId;
     if (dueDate) payload.due_date = dueDate;
+    if (areaId) payload.area_id = areaId;
     const res = await fetch(`${API_BASE}/api/meeting-notes/${encodeURIComponent(noteId)}/promote`, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -181,6 +182,9 @@
             '<div class="mnote-picker-list" id="mnote-meeting-list" style="display:none;"></div>' +
           '</div>' +
           '<div class="mnote-field-hint" id="mnote-meeting-hint"></div>' +
+        '</div>' +
+        // Area picker (mounted dynamically after render)
+        '<div class="mnote-field-group" id="mnote-area-picker-group">' +
         '</div>' +
         // Title
         '<div class="mnote-field-group">' +
@@ -474,7 +478,7 @@
   }
 
   // --- AI candidate chips ---
-  function _renderCandidates(candidates, candidatesEl, listEl, noteId, personId) {
+  function _renderCandidates(candidates, candidatesEl, listEl, noteId, personId, areaId) {
     if (!candidates || !candidates.length) return;
     candidatesEl.style.display = 'block';
     listEl.innerHTML = '';
@@ -504,7 +508,13 @@
         addBtn.disabled = true;
         addBtn.textContent = '…';
         try {
-          await _promoteCandidate(noteId, candidate.title || candidate.text || '', personId, candidate.due_date || null);
+          await _promoteCandidate(
+            noteId,
+            candidate.title || candidate.text || '',
+            personId,
+            candidate.due_date || null,
+            areaId
+          );
           const chip = addBtn.closest('.mnote-candidate');
           if (chip) {
             chip.classList.add('mnote-candidate-done');
@@ -524,7 +534,7 @@
   }
 
   // --- Poll for AI enrichment ---
-  function _startPoll(noteId, candidatesEl, candidatesListEl, personId) {
+  function _startPoll(noteId, candidatesEl, candidatesListEl, personId, areaId) {
     let tries = 0;
     const MAX_TRIES = 10;
     _stopPoll();
@@ -541,7 +551,7 @@
           _stopPoll();
           const suggestions = Array.isArray(note.suggested_action_items) ? note.suggested_action_items : [];
           if (suggestions.length) {
-            _renderCandidates(suggestions, candidatesEl, candidatesListEl, noteId, personId);
+            _renderCandidates(suggestions, candidatesEl, candidatesListEl, noteId, personId, areaId);
           }
         }
       } catch (err) {
@@ -551,7 +561,7 @@
   }
 
   // --- Wire modal ---
-  function _wireModal(pane, opts) {
+  function _wireModal(pane, opts, areaPickerHandle) {
     pane.querySelector('#mnote-close')?.addEventListener('click', () => close());
 
     const errEl = pane.querySelector('#mnote-err');
@@ -581,6 +591,12 @@
       if (activeBtn) { activeBtn.disabled = true; activeBtn.textContent = 'Saving…'; }
 
       try {
+        // Resolve areaPicker — may be a promise (from async mount) or a handle
+        const picker = (areaPickerHandle && typeof areaPickerHandle.then === 'function')
+          ? await areaPickerHandle
+          : areaPickerHandle;
+        const areaId = picker ? picker.value : null;
+
         const payload = {
           title: title || undefined,
           content: content || undefined,
@@ -589,6 +605,7 @@
         };
         if (_selectedPersonId) payload.person_id = _selectedPersonId;
         if (_selectedEventUid) payload.event_uid = _selectedEventUid;
+        if (areaId) payload.area_id = areaId;
 
         const result = await _saveMeetingNote(payload);
         const note = result.note || result;
@@ -602,9 +619,9 @@
         if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saved'; }
         if (saveTasksBtn) { saveTasksBtn.disabled = true; saveTasksBtn.textContent = 'Saved'; }
 
-        // Poll for AI enrichment
+        // Poll for AI enrichment — pass areaId so candidates can inherit it on promote
         if (noteId) {
-          _startPoll(noteId, candidatesEl, candidatesListEl, _selectedPersonId);
+          _startPoll(noteId, candidatesEl, candidatesListEl, _selectedPersonId, areaId);
         }
       } catch (e) {
         console.error('meetingNote: save failed', e);
@@ -658,7 +675,13 @@
     // Kick off people load in background for picker
     _fetchPeople().then(people => { _allPeople = people; });
 
-    _wireModal(modal, opts);
+    // Mount Area picker into its placeholder group
+    const areaPickerGroup = modal.querySelector('#mnote-area-picker-group');
+    const areaPickerHandle = (window.AreaPicker && areaPickerGroup)
+      ? window.AreaPicker.mount(areaPickerGroup, { selectedId: opts.areaId || null })
+      : Promise.resolve(null);
+
+    _wireModal(modal, opts, areaPickerHandle);
 
     _removeEscHandler();
     _escHandler = (e) => {
