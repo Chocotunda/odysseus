@@ -102,3 +102,6 @@ compound.config.json
 *.error.log
 _scratch/
 /odysseus/
+
+# AI session handoff — contains live credentials/account details, never commit
+docs/ai-context/HANDOFF.md
