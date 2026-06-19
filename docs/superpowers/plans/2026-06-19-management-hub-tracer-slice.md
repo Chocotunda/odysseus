@@ -1149,12 +1149,11 @@ def setup_meeting_notes_routes():
     return router
 ```
 
-- [ ] **Step 3c: Register in `app.py`** — next to the planner registration (after line ~765):
+- [ ] **Step 3c: Register in `app.py`** — next to the planner registration (after line ~765).
+
+NOTE: the people router (`setup_people_routes()`) is ALREADY registered in `app.py` (added in Task 2). Do NOT add it again. Only add the meeting-notes router:
 
 ```python
-from routes.people_routes import setup_people_routes
-app.include_router(setup_people_routes())
-
 from routes.meeting_notes_routes import setup_meeting_notes_routes
 app.include_router(setup_meeting_notes_routes())
 ```
