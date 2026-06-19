@@ -75,6 +75,92 @@ def _extract_json(text: str) -> Dict[str, Any]:
         return {}
 
 
+def _extract_json_list(text):
+    """Pull the first JSON array out of a model response (tolerates fences/prose)."""
+    if not text:
+        return []
+    fenced = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
+    candidate = fenced.group(1) if fenced else None
+    if candidate is None:
+        bracket = re.search(r"\[.*\]", text, re.DOTALL)
+        candidate = bracket.group(0) if bracket else None
+    if not candidate:
+        return []
+    try:
+        obj = json.loads(candidate)
+        return obj if isinstance(obj, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+def coerce_action_items(raw, person_name, today, items_already):
+    """Clamp/resolve raw model action items into safe candidates.
+
+    owner is clamped to {"me", person_name} else None; due_hint -> YYYY-MM-DD via
+    dateutil (relative to `today`); empties and titles already in items_already
+    are dropped. Never trusts the model for correctness."""
+    from dateutil import parser as _dtparser
+    from datetime import datetime
+
+    if not isinstance(raw, list):
+        return []
+    seen = {str(t).strip().lower() for t in (items_already or [])}
+    base = datetime.strptime(today, "%Y-%m-%d")
+    out = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        title = str(entry.get("title") or "").strip()
+        if not title or title.lower() in seen:
+            continue
+        seen.add(title.lower())
+
+        owner = entry.get("owner")
+        if owner not in ("me", person_name):
+            owner = None
+
+        due_date = None
+        hint = entry.get("due_hint")
+        if isinstance(hint, str) and hint.strip():
+            try:
+                due_date = _dtparser.parse(hint, default=base, fuzzy=True).strftime("%Y-%m-%d")
+            except (ValueError, OverflowError):
+                due_date = None
+
+        out.append({"title": title, "owner": owner, "due_date": due_date})
+    return out
+
+
+async def extract_action_items(content, person_name, owner=None):
+    """One-shot extraction of action items from meeting-note prose. Returns the
+    raw list (caller coerces). Raises on transport/config failure so the caller
+    can degrade to the user's hand-typed items."""
+    from src.endpoint_resolver import resolve_endpoint
+    from src.llm_core import llm_call_async
+
+    url, model, headers = resolve_endpoint("utility", owner=owner)
+    if not url or not model:
+        raise RuntimeError("no model endpoint configured for action-item extraction")
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    system = (
+        "You extract concrete action items from meeting notes. Today is "
+        f"{today}. The meeting is with a person named \"{person_name}\". Respond "
+        "with ONLY a JSON array; each element has keys:\n"
+        '  "title": short imperative action (string),\n'
+        f'  "owner": "me" or "{person_name}" or null (who will do it),\n'
+        '  "due_hint": a date phrase verbatim from the notes (e.g. "by Friday") or null.\n'
+        "Do NOT invent items not implied by the notes. Return [] if none."
+    )
+    messages = [
+        {"role": "system", "content": system + " /no_think"},
+        {"role": "user", "content": content or ""},
+    ]
+    resp = await llm_call_async(url, model, messages, temperature=0.0, max_tokens=400,
+                                headers=headers, prompt_type="meeting_action_items")
+    return _extract_json_list(resp)
+
+
 async def parse_capture(
     text: str,
     projects: Optional[List[Dict[str, str]]] = None,
