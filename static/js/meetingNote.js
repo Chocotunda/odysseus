@@ -48,6 +48,12 @@
     '<path d="M18 6 6 18M6 6l12 12"/>' +
     '</svg>';
 
+  const ICON_REMOVE =
+    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M18 6 6 18M6 6l12 12"/>' +
+    '</svg>';
+
   // --- XSS escape helper ---
   function _esc(s) {
     return String(s == null ? '' : s)
@@ -131,9 +137,10 @@
     return await res.json();
   }
 
-  async function _promoteCandidate(noteId, title, personId) {
+  async function _promoteCandidate(noteId, title, personId, dueDate) {
     const payload = { title };
     if (personId) payload.person_id = personId;
+    if (dueDate) payload.due_date = dueDate;
     const res = await fetch(`${API_BASE}/api/meeting-notes/${encodeURIComponent(noteId)}/promote`, {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -229,7 +236,7 @@
         '<span class="mnote-item-text' + (item.done ? ' mnote-item-done' : '') + '">' +
           _esc(item.text) +
         '</span>' +
-        '<button class="mnote-item-remove" data-idx="' + idx + '" title="Remove">&#x2715;</button>' +
+        '<button class="mnote-item-remove" data-idx="' + idx + '" title="Remove">' + ICON_REMOVE + '</button>' +
       '</div>'
     ).join('');
   }
@@ -367,15 +374,10 @@
       }
     });
 
-    // Hide list when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!pane.contains(e.target)) {
-        if (listEl) listEl.style.display = 'none';
-      }
-    });
-
+    // Hide list when focus leaves the input. The delay lets a mousedown on a
+    // list item fire first. No document-level listener (would leak across
+    // re-opens of the modal in a long-lived session).
     input?.addEventListener('blur', () => {
-      // Delay so mousedown on list item fires first
       setTimeout(() => {
         if (listEl) listEl.style.display = 'none';
       }, 200);
@@ -502,7 +504,7 @@
         addBtn.disabled = true;
         addBtn.textContent = '…';
         try {
-          await _promoteCandidate(noteId, candidate.title || candidate.text || '', personId);
+          await _promoteCandidate(noteId, candidate.title || candidate.text || '', personId, candidate.due_date || null);
           const chip = addBtn.closest('.mnote-candidate');
           if (chip) {
             chip.classList.add('mnote-candidate-done');
