@@ -123,7 +123,7 @@ function _renderTimeline(v) {
     blocks += place(hh * 60 + mm, dm, m.summary || '(busy)', 'today-block-meeting', `data-meeting="${_esc(m.uid)}"`);
   });
   v.scheduled_tasks.forEach(t => {
-    const [hh, mm] = (t.planned_start || '00:00').split(':').map(Number);
+    const [hh, mm] = (t.planned_start || `${String(HOUR_START).padStart(2, '0')}:00`).split(':').map(Number);
     blocks += place(hh * 60 + mm, t.estimate_minutes || DEFAULT_EST, t.title || '(task)',
                     'today-block-task', `data-task="${_esc(t.id)}"`);
   });
@@ -164,7 +164,7 @@ async function _showTaskDetail(id) {
     area, ppl, note,
     t.notes ? `<div class="today-detail-notes">${_esc(t.notes)}</div>` : '',
   ].join(''), `<button class="today-complete-btn" data-complete="${_esc(t.id)}">Complete</button>`);
-  const btn = document.querySelector('[data-complete]');
+  const btn = document.getElementById('today-detail')?.querySelector('[data-complete]');
   if (btn) btn.addEventListener('click', async () => { await _completeTask(t.id); _closeDetail(); _reload(); });
 }
 
