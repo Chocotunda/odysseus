@@ -764,6 +764,10 @@ app.include_router(setup_note_routes(task_scheduler))
 from routes.planner_routes import setup_planner_routes
 app.include_router(setup_planner_routes(task_scheduler))
 
+# People (management-hub Person nodes)
+from routes.people_routes import setup_people_routes
+app.include_router(setup_people_routes())
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()

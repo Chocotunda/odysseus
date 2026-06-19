@@ -1729,6 +1729,23 @@ class Link(TimestampMixin, Base):
     )
 
 
+class Person(TimestampMixin, Base):
+    """A person the user tracks (report, contact). First-class node in the hub
+    graph — meetings/notes/tasks link to it via the Link table. Single-user:
+    people do NOT log in; this is info the owner keeps ABOUT them."""
+    __tablename__ = "people"
+
+    id          = Column(String, primary_key=True, index=True)
+    owner       = Column(String, nullable=True, index=True)
+    name        = Column(String, nullable=False, default="")
+    contact_uid = Column(String, nullable=True)   # optional iCloud CardDAV contact ref
+    email       = Column(String, nullable=True)
+    role        = Column(String, nullable=True)
+    archived    = Column(Boolean, default=False)
+
+    __table_args__ = (Index('ix_people_owner_archived', 'owner', 'archived'),)
+
+
 class CalendarCal(TimestampMixin, Base):
     """A calendar (e.g. 'Personal', 'TimeTree')."""
     __tablename__ = "calendars"
