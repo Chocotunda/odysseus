@@ -6,12 +6,16 @@ edges PLUS the existing source_* soft fields (a denormalized cache, so existing
 planner code keeps working). The Link table is canonical; the soft fields mirror
 it for the single most common back-reference.
 """
+import hashlib
 import json
+import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from core.database import Note, PlanItem
+from core.database import Note, PlanItem, SessionLocal
 from src import links as L
+
+logger = logging.getLogger(__name__)
 
 
 def _note_dict(note: Note) -> Dict[str, Any]:
@@ -108,3 +112,35 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
             if not it.get("done") and (it.get("text") or "").strip():
                 tasks.append(promote_action_item(db, owner, note.id, it["text"], person_id=person_id))
     return {"note": _note_dict(note), "tasks": tasks}
+
+
+async def enrich_meeting_note(note_id: str, owner: Optional[str]) -> None:
+    """Background: extract candidate action items via AI, store them on the Note
+    for the UI to confirm. Best-effort; always stamps ai_content_hash so the
+    client poll terminates."""
+    from src import planner_ai
+    from datetime import datetime
+    db = SessionLocal()
+    try:
+        note = db.query(Note).filter(Note.id == note_id).first()
+        if not note or (owner is not None and note.owner != owner):
+            return
+        person_name = ""
+        for e in L.links_from(db, owner, L.NODE_NOTE, note_id, rel=L.REL_ABOUT):
+            from core.database import Person
+            p = db.query(Person).filter(Person.id == e.to_id).first()
+            if p:
+                person_name = p.name
+                break
+        try:
+            existing = [it.get("text", "") for it in (json.loads(note.items) if note.items else [])]
+            raw = await planner_ai.extract_action_items(note.content or "", person_name, owner=owner)
+            suggested = planner_ai.coerce_action_items(
+                raw, person_name, datetime.now().strftime("%Y-%m-%d"), existing)
+            note.ai_classification = json.dumps({"suggested_action_items": suggested})
+        except Exception:
+            logger.exception("meeting-note enrichment failed; keeping note as-is")
+        note.ai_content_hash = hashlib.sha256((note.content or "").encode("utf-8")).hexdigest()
+        db.commit()
+    finally:
+        db.close()

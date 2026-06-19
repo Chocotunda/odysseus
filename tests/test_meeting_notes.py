@@ -58,3 +58,23 @@ def test_promotion_is_idempotent():
     # promote the same item again -> no duplicate task
     MN.promote_action_item(db, "alice", note_id, "Send deck", person_id="p1")
     assert db.query(PlanItem).filter(PlanItem.title == "Send deck").count() == 1
+
+
+async def test_enrich_writes_suggested_items(monkeypatch):
+    db = _db()
+    out = MN.save_meeting_note(db, "alice", title="1:1", content="Wiggert to send the deck by Friday.",
+                               action_items=[], person_id="p1", event_uid=None, make_tasks=False)
+    note_id = out["note"]["id"]
+
+    import src.planner_ai as pai
+    async def fake_extract(content, person_name, owner=None):
+        return [{"title": "Send the deck", "owner": person_name, "due_hint": "2026-06-26"}]
+    monkeypatch.setattr(pai, "extract_action_items", fake_extract)
+    # use the SAME engine/session for the background fn
+    import src.meeting_notes as MNmod
+    monkeypatch.setattr(MNmod, "SessionLocal", lambda: db, raising=False)
+
+    await MN.enrich_meeting_note(note_id, "alice")
+    refreshed = MN._note_dict(db.query(Note).filter(Note.id == note_id).one())
+    assert refreshed["ai_enriched"] is True
+    assert [s["title"] for s in refreshed["suggested_action_items"]] == ["Send the deck"]

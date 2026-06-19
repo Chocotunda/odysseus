@@ -768,6 +768,10 @@ app.include_router(setup_planner_routes(task_scheduler))
 from routes.people_routes import setup_people_routes
 app.include_router(setup_people_routes())
 
+# Meeting notes (hub composer: save + background AI enrichment + promote)
+from routes.meeting_notes_routes import setup_meeting_notes_routes
+app.include_router(setup_meeting_notes_routes())
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
@@ -855,6 +859,14 @@ async def serve_tasks(request: Request):
 
 @app.get("/library")
 async def serve_library(request: Request):
+    return await serve_index(request)
+
+@app.get("/people")
+async def serve_people(request: Request):
+    return await serve_index(request)
+
+@app.get("/people/{person_id}")
+async def serve_person(request: Request, person_id: str):
     return await serve_index(request)
 
 @app.get("/backgrounds")
