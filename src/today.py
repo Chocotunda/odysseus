@@ -115,6 +115,7 @@ def _attach_areas(db, owner, task_dicts, meeting_dicts):
     from_ids = list({pid for _, pid in pairs})
     edges = (db.query(Link)
              .filter(Link.owner == owner, Link.rel == REL_IN_AREA,
+                     Link.from_type.in_([NODE_TASK, NODE_MEETING]),
                      Link.from_id.in_(from_ids))
              .all())
     area_of = {(e.from_type, e.from_id): e.to_id for e in edges}
