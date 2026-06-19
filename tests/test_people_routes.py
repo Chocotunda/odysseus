@@ -150,3 +150,23 @@ def test_person_page_excludes_other_persons_and_owners(monkeypatch):
     db.close()
     page = _ep(router, "/{person_id}/page", "GET")(_request("alice"), p1["id"])
     assert page["open_tasks"] == []   # p1 has none; p2's task must not leak
+
+
+def test_person_create_with_area_and_reassign(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(people_routes, "SessionLocal", SF)
+    router = people_routes.setup_people_routes()
+    p = _ep(router, "", "POST")(_request("alice"),
+                                people_routes.PersonCreate(name="Wiggert", area_id="areaWork"))
+    assert p["area_id"] == "areaWork"
+    # get echoes the area
+    assert _ep(router, "/{person_id}", "GET")(_request("alice"), p["id"])["area_id"] == "areaWork"
+    # reassign via update -> exactly one area, the new one
+    upd = _ep(router, "/{person_id}", "PUT")(_request("alice"), p["id"],
+                                            people_routes.PersonUpdate(area_id="areaPersonal"))
+    assert upd["area_id"] == "areaPersonal"
+    import src.links as L
+    db = SF()
+    edges = L.links_from(db, "alice", L.NODE_PERSON, p["id"], rel=L.REL_IN_AREA)
+    assert [e.to_id for e in edges] == ["areaPersonal"]
+    db.close()

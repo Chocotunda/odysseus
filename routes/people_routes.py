@@ -21,6 +21,7 @@ class PersonCreate(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     contact_uid: Optional[str] = None
+    area_id: Optional[str] = None
 
 
 class PersonUpdate(BaseModel):
@@ -29,12 +30,14 @@ class PersonUpdate(BaseModel):
     role: Optional[str] = None
     contact_uid: Optional[str] = None
     archived: Optional[bool] = None
+    area_id: Optional[str] = None
 
 
-def _person_to_dict(p: Person) -> Dict[str, Any]:
+def _person_to_dict(p: Person, area_id: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": p.id, "name": p.name, "email": p.email, "role": p.role,
         "contact_uid": p.contact_uid, "archived": bool(p.archived),
+        "area_id": area_id,
     }
 
 
@@ -51,6 +54,20 @@ def setup_people_routes():
             raise HTTPException(status_code=404, detail="person not found")
         return p
 
+    def _area_of(db, owner, person_id):
+        from src.links import links_from, NODE_PERSON, REL_IN_AREA
+        edges = links_from(db, owner, NODE_PERSON, person_id, rel=REL_IN_AREA)
+        return edges[0].to_id if edges else None
+
+    def _area_map(db, owner, person_ids):
+        from src.links import Link, NODE_PERSON, NODE_AREA, REL_IN_AREA
+        if not person_ids:
+            return {}
+        rows = (db.query(Link)
+                .filter(Link.owner == owner, Link.from_type == NODE_PERSON,
+                        Link.from_id.in_(person_ids), Link.rel == REL_IN_AREA).all())
+        return {r.from_id: r.to_id for r in rows}
+
     @router.get("")
     def list_people(request: Request):
         owner = _owner(request)
@@ -60,7 +77,8 @@ def setup_people_routes():
             if owner is not None:
                 q = q.filter(Person.owner == owner)
             rows = q.order_by(Person.name).all()
-            return {"people": [_person_to_dict(p) for p in rows]}
+            amap = _area_map(db, owner, [p.id for p in rows])
+            return {"people": [_person_to_dict(p, amap.get(p.id)) for p in rows]}
         finally:
             db.close()
 
@@ -73,7 +91,10 @@ def setup_people_routes():
                        email=body.email, role=body.role, contact_uid=body.contact_uid)
             db.add(p)
             db.commit()
-            return _person_to_dict(p)
+            from src.links import set_area, NODE_PERSON
+            if body.area_id is not None:
+                set_area(db, owner, NODE_PERSON, p.id, body.area_id or None)
+            return _person_to_dict(p, body.area_id or None)
         finally:
             db.close()
 
@@ -81,7 +102,8 @@ def setup_people_routes():
     def get_person(request: Request, person_id: str):
         db = SessionLocal()
         try:
-            return _person_to_dict(_load(db, request, person_id))
+            p = _load(db, request, person_id)
+            return _person_to_dict(p, _area_of(db, p.owner, p.id))
         finally:
             db.close()
 
@@ -95,7 +117,10 @@ def setup_people_routes():
                 if val is not None:
                     setattr(p, field, val)
             db.commit()
-            return _person_to_dict(p)
+            from src.links import set_area, NODE_PERSON
+            if body.area_id is not None:
+                set_area(db, p.owner, NODE_PERSON, p.id, body.area_id or None)
+            return _person_to_dict(p, _area_of(db, p.owner, p.id))
         finally:
             db.close()
 
