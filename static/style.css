@@ -37965,7 +37965,7 @@ body.theme-frosted .modal {
 .mnote-picker-wrap { position: relative; }
 .mnote-picker-list {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
-  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   max-height: 180px; overflow-y: auto;
   margin-top: 3px;
@@ -38020,7 +38020,7 @@ body.theme-frosted .modal {
 .mnote-results-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .mnote-task-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  background: var(--card); border: 1px solid var(--border);
+  background: var(--bg); border: 1px solid var(--border);
   border-radius: 20px; padding: 3px 10px;
   font-size: 11px; color: var(--fg); white-space: nowrap;
 }
@@ -38073,21 +38073,21 @@ body.theme-frosted .modal {
   border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .today-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--fg); }
 .today-nav { display: flex; align-items: center; gap: 6px; }
-.today-now-btn, .today-view-btn { background: var(--card); color: var(--fg);
+.today-now-btn, .today-view-btn { background: var(--bg); color: var(--fg);
   border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
   font-family: inherit; font-size: 12px; }
 .today-view-btn.active { border-color: var(--red); color: var(--red); }
-.today-date-input { background: var(--card); color: var(--fg); border: 1px solid var(--border);
+.today-date-input { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
   border-radius: 6px; padding: 3px 6px; font-family: inherit; }
 .today-views { margin-left: auto; display: flex; gap: 6px; }
 .today-body { flex: 1; overflow: auto; padding: 16px 18px; }
 .today-section { margin-bottom: 18px; }
 .today-section-header { display: flex; align-items: center; gap: 8px; font-weight: 600;
   color: var(--fg); margin-bottom: 8px; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; }
-.today-count { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+.today-count { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
   padding: 0 7px; font-size: 11px; color: var(--fg); }
 .today-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--card); margin-bottom: 6px; }
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg); margin-bottom: 6px; }
 .today-item:hover { border-color: var(--red); }
 .today-item-title { color: var(--fg); flex: 1; }
 .today-item-time { color: var(--fg); opacity: .8; min-width: 52px; }
@@ -38104,12 +38104,12 @@ body.theme-frosted .modal {
 .today-blocks { position: absolute; top: 0; left: 56px; right: 0; bottom: 0; }
 .today-block { position: absolute; left: 0; right: 0; border-radius: 5px; padding: 3px 6px;
   font-size: 11px; overflow: hidden; cursor: pointer; border: 1px solid var(--border); }
-.today-block-meeting { background: color-mix(in srgb, var(--red) 18%, var(--card)); }
-.today-block-task { background: var(--card); }
+.today-block-meeting { background: color-mix(in srgb, var(--red) 18%, var(--bg)); }
+.today-block-task { background: var(--bg); }
 .today-rail-item, .today-block-task { cursor: grab; }
 .today-blocks.drag-over { outline: 2px dashed var(--red); outline-offset: -2px; }
 .today-rail { width: 240px; flex-shrink: 0; }
-.today-detail { position: fixed; top: 0; right: 0; width: 340px; height: 100%; background: var(--card);
+.today-detail { position: fixed; top: 62px; right: 0; width: 340px; height: calc(100% - 62px); background: var(--panel);
   border-left: 1px solid var(--border); transform: translateX(100%); transition: transform .18s; z-index: 1001; }
 .today-detail.open { transform: translateX(0); }
 .today-detail-head { display: flex; justify-content: space-between; align-items: center;
