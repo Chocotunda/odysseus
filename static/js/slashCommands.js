@@ -1351,6 +1351,7 @@ async function _cmdOpen(args, ctx) {
       notes: ['tool-notes-btn', 'rail-notes'],
       planner: ['tool-planner-btn', 'rail-planner'],
       people: ['tool-people-btn', 'rail-people'],
+      areas: ['tool-areas-btn'],
       tasks: ['tool-tasks-btn', 'rail-tasks'],
       library: ['tool-library-btn', 'rail-archive'],
       documents: ['tool-library-btn', 'rail-archive'],
@@ -6005,6 +6006,13 @@ const COMMANDS = {
     help: 'Open People',
     handler: (args, ctx) => _cmdToolPanel('people', args, ctx),
     usage: '/people'
+  },
+  areas: {
+    alias: [],
+    category: 'Tools',
+    help: 'Open Areas',
+    handler: (args, ctx) => _cmdToolPanel('areas', args, ctx),
+    usage: '/areas'
   },
   'meeting-note': {
     alias: ['meetingnote', 'meeting-notes'],

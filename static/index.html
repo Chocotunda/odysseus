@@ -126,6 +126,11 @@
           "<path d='M3 26 C3 21 7 18 11 18 C15 18 19 21 19 26' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>" +
           "<circle cx='21' cy='12' r='3' fill='none' stroke='" + ac + "' stroke-width='2'/>" +
           "<path d='M17 26 C17 23 18.5 21 21 21 C23.5 21 25 23 25 26' fill='none' stroke='" + ac + "' stroke-width='2' stroke-linecap='round'/>",
+        '/areas':
+          "<rect x='3' y='3' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
+          "<rect x='18' y='3' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
+          "<rect x='3' y='18' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
+          "<rect x='18' y='18' width='11' height='11' rx='1.5' fill='none' stroke='" + ac + "' stroke-width='2.5'/>",
         '/cookbook':
           "<path d='M5 8 L5 26 A2 2 0 0 0 7 28 L25 28 A2 2 0 0 0 27 26 L27 8' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linejoin='round'/>" +
           "<path d='M9 4 L23 4 L23 8 L9 8 Z' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linejoin='round'/>" +
@@ -165,6 +170,7 @@
         '/notes': 'Notes — Odysseus',
         '/planner': 'Planner — Odysseus',
         '/people': 'People — Odysseus',
+        '/areas': 'Areas — Odysseus',
         '/cookbook': 'Cookbook — Odysseus',
         '/email': 'Email — Odysseus',
         '/memory': 'Memory — Odysseus',
@@ -926,6 +932,17 @@
             <path d="M22 21v-2a5 5 0 0 0-5-5"/>
           </svg>
           <span class="grow">People</span>
+        </div>
+        <div class="list-item" id="tool-areas-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <span class="grow">Areas</span>
         </div>
         <div class="list-item" id="tool-tasks-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2490,6 +2507,8 @@
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
 <script type="module" src="/static/js/people.js"></script>
+<script type="module" src="/static/js/areas.js"></script>
+<script src="/static/js/areaPicker.js"></script>
 <script src="/static/js/meetingNote.js"></script>
 <script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST -->
 <script type="module" src="/static/js/init.js"></script>

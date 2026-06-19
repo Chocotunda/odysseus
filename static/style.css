@@ -37863,6 +37863,33 @@ body.theme-frosted .modal {
   display: flex; gap: 8px;
 }
 
+/* Areas list + per-area dashboard panel. Mirrors the People panel pattern. */
+.area-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  transition: border-color 0.1s;
+}
+.area-card:hover { border-color: var(--red); }
+.area-card-name { font-size: 13px; font-weight: 600; color: var(--fg); flex: 1; }
+.area-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  display: inline-block;
+}
+/* Color picker row in the "+ Area" form */
+.area-color-row {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 0 2px;
+}
+.area-color-swatch {
+  width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; flex-shrink: 0;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.area-color-swatch:hover { transform: scale(1.15); }
+.area-color-swatch.selected { border-color: var(--fg); }
+/* area-section is a thin alias — uses person-section base styles */
+.area-section { }
+
 /* ── Meeting-note composer modal (.mnote-*) ── */
 .mnote-backdrop {
   position: fixed; inset: 0; z-index: 1000;

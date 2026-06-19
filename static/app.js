@@ -27,6 +27,7 @@ import calendarModule from './js/calendar.js';
 import notesModule from './js/notes.js';
 import plannerModule from './js/planner.js';
 import peopleModule from './js/people.js';
+import areasModule from './js/areas.js';
 import adminModule from './js/admin.js';
 import settingsModule from './js/settings.js';
 // Eagerly bind unified minimize/restore behavior across all tool modals.
@@ -940,6 +941,14 @@ function initializeEventListeners() {
     });
   }
 
+  // Areas tool button
+  const toolAreasBtn = el('tool-areas-btn');
+  if (toolAreasBtn) {
+    toolAreasBtn.addEventListener('click', () => {
+      if (areasModule) areasModule.openAreas();
+    });
+  }
+
   // URL-based panel routing — bookmark /calendar, /notes, /cookbook etc
   // and the matching tool opens automatically on page load.
   const urlPath = window.location.pathname;
@@ -1026,6 +1035,7 @@ function initializeEventListeners() {
     },
     '/planner':  () => plannerModule && plannerModule.openPanel(),
     '/people':   () => peopleModule && peopleModule.openPeople(),
+    '/areas':    () => areasModule && areasModule.openAreas(),
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/email':    () => {
@@ -1068,9 +1078,14 @@ function initializeEventListeners() {
   };
   // /people/<id> deep-link: not in the exact-key map, so check the prefix.
   const _peopleDetailMatch = /^\/people\/(.+)$/.exec(urlPath);
+  // /areas/<id> deep-link: same pattern for area dashboard.
+  const _areasDetailMatch = /^\/areas\/(.+)$/.exec(urlPath);
   const _opener = _routeOpen[urlPath] ||
     (_peopleDetailMatch && peopleModule
       ? () => peopleModule.openPerson(_peopleDetailMatch[1])
+      : null) ||
+    (_areasDetailMatch && areasModule
+      ? () => areasModule.openArea(_areasDetailMatch[1])
       : null);
   // Defer the opener — at this point in init, the modules whose handlers
   // we trigger (#rail-new-session click handler, the email-section header
