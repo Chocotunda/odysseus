@@ -1676,6 +1676,7 @@ class PlanItem(TimestampMixin, Base):
     # planning
     planned_day   = Column(String, nullable=True, index=True)   # 'YYYY-MM-DD'; NULL = backlog
     due_date      = Column(String, nullable=True)               # 'YYYY-MM-DD'
+    planned_start = Column(String, nullable=True)              # 'HH:MM' local; set => time-blocked
     priority      = Column(String, default="normal")  # none|normal|important|urgent
     status        = Column(String, default="open")    # open|in_progress|done|cancelled
     completed_at  = Column(DateTime, nullable=True)

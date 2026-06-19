@@ -1,0 +1,56 @@
+"""The /today daily day-planner: day_view aggregation + routes."""
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from core.database import Base, PlanItem, CalendarCal, CalendarEvent, Area, utcnow_naive
+from src import links as L
+from src import today as T
+
+
+def _db():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
+
+
+def test_day_view_partitions_tasks():
+    db = _db()
+    db.add(PlanItem(id="s1", owner="alice", title="Blocked", status="open",
+                    planned_day="2026-06-20", planned_start="09:00", estimate_minutes=45))
+    db.add(PlanItem(id="u1", owner="alice", title="Anytime", status="open",
+                    planned_day="2026-06-20"))                       # no planned_start -> unscheduled
+    db.add(PlanItem(id="o1", owner="alice", title="Late", status="open",
+                    due_date="2026-06-18"))                          # overdue
+    db.add(PlanItem(id="d1", owner="alice", title="Done", status="done",
+                    planned_day="2026-06-20", planned_start="10:00"))  # excluded
+    db.commit()
+
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert [t["id"] for t in v["scheduled_tasks"]] == ["s1"]
+    assert [t["id"] for t in v["unscheduled_tasks"]] == ["u1"]
+    assert [t["id"] for t in v["overdue_tasks"]] == ["o1"]
+    assert v["is_today"] is True
+    # capacity = 45 (s1) + 30 default (u1); overdue not counted toward the day
+    assert v["capacity_minutes"] == 75
+
+
+def test_overdue_only_when_viewing_today():
+    db = _db()
+    db.add(PlanItem(id="o1", owner="alice", title="Late", status="open", due_date="2026-06-18"))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-21", today="2026-06-20")   # viewing a future day
+    assert v["overdue_tasks"] == []
+    assert v["is_today"] is False
+
+
+def test_day_view_owner_isolated():
+    db = _db()
+    db.add(PlanItem(id="s1", owner="alice", title="A", status="open",
+                    planned_day="2026-06-20", planned_start="09:00"))
+    db.add(PlanItem(id="s2", owner="bob", title="B", status="open",
+                    planned_day="2026-06-20", planned_start="09:00"))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert [t["id"] for t in v["scheduled_tasks"]] == ["s1"]
