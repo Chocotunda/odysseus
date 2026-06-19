@@ -106,4 +106,43 @@ def setup_area_routes():
         finally:
             db.close()
 
+    @router.get("/{area_id}/page")
+    def area_page(request: Request, area_id: str):
+        from src.links import (links_to, NODE_AREA, NODE_PERSON, NODE_TASK,
+                               NODE_NOTE, NODE_MEETING, REL_IN_AREA)
+        from core.database import Person, PlanItem, Note, CalendarEvent
+        db = SessionLocal()
+        try:
+            area = _load(db, request, area_id)
+            owner = area.owner
+            by_type: Dict[str, list] = {}
+            for e in links_to(db, owner, NODE_AREA, area_id, rel=REL_IN_AREA):
+                by_type.setdefault(e.from_type, []).append(e.from_id)
+
+            pids = by_type.get(NODE_PERSON, [])
+            people = db.query(Person).filter(Person.id.in_(pids)).all() if pids else []
+
+            tids = by_type.get(NODE_TASK, [])
+            tasks = (db.query(PlanItem)
+                     .filter(PlanItem.id.in_(tids), PlanItem.status == "open").all()) if tids else []
+            tasks.sort(key=lambda t: (t.due_date is None, t.due_date or ""))
+
+            nids = by_type.get(NODE_NOTE, [])
+            notes = db.query(Note).filter(Note.id.in_(nids)).all() if nids else []
+
+            mids = by_type.get(NODE_MEETING, [])
+            meetings = db.query(CalendarEvent).filter(CalendarEvent.uid.in_(mids)).all() if mids else []
+
+            return {
+                "area": _area_to_dict(area),
+                "people": [{"id": p.id, "name": p.name, "role": p.role} for p in people],
+                "open_tasks": [{"id": t.id, "title": t.title, "due_date": t.due_date,
+                                "priority": t.priority} for t in tasks],
+                "notes": [{"id": n.id, "title": n.title} for n in notes],
+                "meetings": [{"uid": m.uid, "summary": m.summary,
+                              "dtstart": m.dtstart.isoformat() if m.dtstart else None} for m in meetings],
+            }
+        finally:
+            db.close()
+
     return router

@@ -98,3 +98,52 @@ def test_area_crud_and_owner_isolation(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         _ep(router, "/{area_id}", "GET")(_request("bob"), a["id"])
     assert ei.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Task 3: Area dashboard aggregation endpoint
+# ---------------------------------------------------------------------------
+
+def test_area_page_aggregates_members_partitioned(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(area_routes, "SessionLocal", SF)
+    router = area_routes.setup_area_routes()
+    area = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Work"))
+
+    db = SF()
+    from core.database import Person, PlanItem, Note, CalendarEvent, CalendarCal, utcnow_naive
+    db.add(Person(id="p1", owner="alice", name="Wiggert"))
+    db.add(PlanItem(id="t1", owner="alice", title="Ship", status="open"))
+    db.add(PlanItem(id="t2", owner="alice", title="Done one", status="done"))
+    db.add(Note(id="n1", owner="alice", title="1:1 note"))
+    db.add(CalendarCal(id="c1", owner="alice", name="Cal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Weekly 1:1",
+                         dtstart=utcnow_naive(), dtend=utcnow_naive()))
+    db.commit()
+    for nt, nid in [(L.NODE_PERSON, "p1"), (L.NODE_TASK, "t1"), (L.NODE_TASK, "t2"),
+                    (L.NODE_NOTE, "n1"), (L.NODE_MEETING, "m1")]:
+        L.set_area(db, "alice", nt, nid, area["id"])
+    db.close()
+
+    page = _ep(router, "/{area_id}/page", "GET")(_request("alice"), area["id"])
+    assert page["area"]["name"] == "Work"
+    assert [p["name"] for p in page["people"]] == ["Wiggert"]
+    assert [t["title"] for t in page["open_tasks"]] == ["Ship"]    # 'done' excluded
+    assert [n["title"] for n in page["notes"]] == ["1:1 note"]
+    assert [m["uid"] for m in page["meetings"]] == ["m1"]
+
+
+def test_area_page_excludes_other_areas(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(area_routes, "SessionLocal", SF)
+    router = area_routes.setup_area_routes()
+    work = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Work"))
+    personal = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Personal"))
+    db = SF()
+    from core.database import Person
+    db.add(Person(id="p1", owner="alice", name="OnlyPersonal"))
+    db.commit()
+    L.set_area(db, "alice", L.NODE_PERSON, "p1", personal["id"])
+    db.close()
+    page = _ep(router, "/{area_id}/page", "GET")(_request("alice"), work["id"])
+    assert page["people"] == []
