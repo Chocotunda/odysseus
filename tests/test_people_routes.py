@@ -57,3 +57,45 @@ def test_update_person(monkeypatch):
     upd = _ep(router, "/{person_id}", "PUT")(_request("alice"), p["id"],
                                              people_routes.PersonUpdate(email="w@x.io"))
     assert upd["email"] == "w@x.io"
+
+
+def test_person_page_aggregates_open_tasks_meetings_notes(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(people_routes, "SessionLocal", SF)
+    import src.meeting_notes as MN
+    router = people_routes.setup_people_routes()
+    p = _ep(router, "", "POST")(_request("alice"), people_routes.PersonCreate(name="Wiggert"))
+
+    db = SF()
+    # seed a calendar event the note will attach to
+    from core.database import CalendarCal, CalendarEvent, utcnow_naive
+    db.add(CalendarCal(id="c1", owner="alice", name="Personal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Weekly 1:1",
+                         dtstart=utcnow_naive(), dtend=utcnow_naive()))
+    db.commit()
+    MN.save_meeting_note(db, "alice", title="1:1", content="notes",
+                         action_items=[{"text": "Send deck", "done": False}],
+                         person_id=p["id"], event_uid="m1", make_tasks=True)
+    db.close()
+
+    page = _ep(router, "/{person_id}/page", "GET")(_request("alice"), p["id"])
+    assert page["person"]["id"] == p["id"]
+    assert [t["title"] for t in page["open_tasks"]] == ["Send deck"]
+    assert [m["uid"] for m in page["meetings"]] == ["m1"]
+    assert len(page["notes"]) == 1
+
+
+def test_person_page_excludes_other_persons_and_owners(monkeypatch):
+    SF = _sf()
+    monkeypatch.setattr(people_routes, "SessionLocal", SF)
+    import src.meeting_notes as MN
+    router = people_routes.setup_people_routes()
+    p1 = _ep(router, "", "POST")(_request("alice"), people_routes.PersonCreate(name="W"))
+    p2 = _ep(router, "", "POST")(_request("alice"), people_routes.PersonCreate(name="X"))
+    db = SF()
+    MN.save_meeting_note(db, "alice", title="n", content="", person_id=p2["id"],
+                         action_items=[{"text": "X task", "done": False}],
+                         event_uid=None, make_tasks=True)
+    db.close()
+    page = _ep(router, "/{person_id}/page", "GET")(_request("alice"), p1["id"])
+    assert page["open_tasks"] == []   # p1 has none; p2's task must not leak

@@ -112,4 +112,39 @@ def setup_people_routes():
         finally:
             db.close()
 
+    @router.get("/{person_id}/page")
+    def person_page(request: Request, person_id: str):
+        from src.links import links_to, NODE_PERSON, NODE_TASK, NODE_NOTE, NODE_MEETING, REL_ABOUT, REL_NOTE_OF, REL_ATTENDED_BY
+        from core.database import PlanItem, Note, CalendarEvent
+        db = SessionLocal()
+        try:
+            person = _load(db, request, person_id)
+            owner = person.owner
+
+            task_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)
+                        if e.from_type == NODE_TASK]
+            tasks = (db.query(PlanItem)
+                     .filter(PlanItem.id.in_(task_ids), PlanItem.status == "open").all()) if task_ids else []
+            # overdue-first: items with a due_date sort before those without, ascending
+            tasks.sort(key=lambda t: (t.due_date is None, t.due_date or ""))
+
+            note_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)
+                        if e.from_type == NODE_NOTE]
+            notes = db.query(Note).filter(Note.id.in_(note_ids)).all() if note_ids else []
+
+            mtg_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ATTENDED_BY)
+                       if e.from_type == NODE_MEETING]
+            meetings = db.query(CalendarEvent).filter(CalendarEvent.uid.in_(mtg_ids)).all() if mtg_ids else []
+
+            return {
+                "person": _person_to_dict(person),
+                "open_tasks": [{"id": t.id, "title": t.title, "due_date": t.due_date,
+                                "priority": t.priority, "source_note_id": t.source_note_id} for t in tasks],
+                "meetings": [{"uid": m.uid, "summary": m.summary,
+                              "dtstart": m.dtstart.isoformat() if m.dtstart else None} for m in meetings],
+                "notes": [{"id": n.id, "title": n.title} for n in notes],
+            }
+        finally:
+            db.close()
+
     return router
