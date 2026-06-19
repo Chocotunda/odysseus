@@ -6,7 +6,7 @@ Pure, owner-scoped logic that gathers a single day's tasks + meetings for the
 we reuse the calendar feature's rrule expansion. Areas are resolved via the
 reverse-Link (in_area) spine, never a per-row column.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from core.database import PlanItem, CalendarCal, CalendarEvent, Area, Link
@@ -74,9 +74,60 @@ def day_view(db, owner: Optional[str], day: str, *, today: Optional[str] = None)
     }
 
 
-def _meetings_for_day(db, owner, day):     # filled in Task 2
-    return []
+def _meetings_for_day(db, owner, day):
+    # Reuse the calendar feature's range + rrule expansion so recurring
+    # meetings (standups, 1:1s) correctly land on the day. tz handling matches
+    # the calendar's own list_events (naive-local windows; is_utc honored on
+    # serialization). This is the one place we use real datetime math.
+    from routes.calendar_routes import _expand_rrule
+    start_dt = datetime.strptime(f"{day} 00:00", "%Y-%m-%d %H:%M")
+    end_dt = start_dt + timedelta(days=1)
+
+    cq = db.query(CalendarCal)
+    if owner is not None:
+        cq = cq.filter(CalendarCal.owner == owner)
+    cal_ids = [c.id for c in cq.all()]
+    if not cal_ids:
+        return []
+
+    rows = (db.query(CalendarEvent)
+            .filter(CalendarEvent.calendar_id.in_(cal_ids),
+                    CalendarEvent.dtstart < end_dt,
+                    CalendarEvent.dtend > start_dt)
+            .all())
+    out = []
+    for ev in rows:
+        for d in _expand_rrule(ev, start_dt, end_dt):
+            d.setdefault("series_uid", ev.uid)
+            d["area_id"] = None
+            d["area_name"] = None
+            d["area_color"] = None
+            out.append(d)
+    out.sort(key=lambda m: (not m.get("all_day", False), str(m.get("dtstart") or "")))
+    return out
 
 
-def _attach_areas(db, owner, task_dicts, meeting_dicts):   # filled in Task 2
-    return
+def _attach_areas(db, owner, task_dicts, meeting_dicts):
+    pairs = [(NODE_TASK, t["id"]) for t in task_dicts]
+    pairs += [(NODE_MEETING, m.get("series_uid") or m.get("uid")) for m in meeting_dicts]
+    if not pairs:
+        return
+    from_ids = list({pid for _, pid in pairs})
+    edges = (db.query(Link)
+             .filter(Link.owner == owner, Link.rel == REL_IN_AREA,
+                     Link.from_id.in_(from_ids))
+             .all())
+    area_of = {(e.from_type, e.from_id): e.to_id for e in edges}
+    aids = set(area_of.values())
+    areas = {a.id: a for a in db.query(Area).filter(Area.id.in_(aids)).all()} if aids else {}
+
+    def _stamp(d, node_type, node_id):
+        aid = area_of.get((node_type, node_id))
+        a = areas.get(aid) if aid else None
+        if a:
+            d["area_id"], d["area_name"], d["area_color"] = a.id, a.name, a.color
+
+    for t in task_dicts:
+        _stamp(t, NODE_TASK, t["id"])
+    for m in meeting_dicts:
+        _stamp(m, NODE_MEETING, m.get("series_uid") or m.get("uid"))

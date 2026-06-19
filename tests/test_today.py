@@ -54,3 +54,47 @@ def test_day_view_owner_isolated():
     db.commit()
     v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
     assert [t["id"] for t in v["scheduled_tasks"]] == ["s1"]
+
+
+def _on(day, hour):
+    return datetime.strptime(f"{day} {hour:02d}:00", "%Y-%m-%d %H:%M")
+
+
+def test_day_view_includes_meetings_on_day():
+    db = _db()
+    db.add(CalendarCal(id="c1", owner="alice", name="Cal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Standup",
+                         dtstart=_on("2026-06-20", 9), dtend=_on("2026-06-20", 10)))
+    db.add(CalendarEvent(uid="m2", calendar_id="c1", summary="Other day",
+                         dtstart=_on("2026-06-21", 9), dtend=_on("2026-06-21", 10)))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert [m["summary"] for m in v["meetings"]] == ["Standup"]
+
+
+def test_day_view_meetings_owner_isolated():
+    db = _db()
+    db.add(CalendarCal(id="c1", owner="bob", name="Bob cal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Bob mtg",
+                         dtstart=_on("2026-06-20", 9), dtend=_on("2026-06-20", 10)))
+    db.commit()
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert v["meetings"] == []
+
+
+def test_day_view_attaches_area_to_task_and_meeting():
+    db = _db()
+    db.add(Area(id="aw", owner="alice", name="Work", color="#a60717"))
+    db.add(PlanItem(id="s1", owner="alice", title="T", status="open",
+                    planned_day="2026-06-20", planned_start="09:00"))
+    db.add(CalendarCal(id="c1", owner="alice", name="Cal"))
+    db.add(CalendarEvent(uid="m1", calendar_id="c1", summary="Mtg",
+                         dtstart=_on("2026-06-20", 11), dtend=_on("2026-06-20", 12)))
+    db.commit()
+    L.set_area(db, "alice", L.NODE_TASK, "s1", "aw")
+    L.set_area(db, "alice", L.NODE_MEETING, "m1", "aw")
+
+    v = T.day_view(db, "alice", "2026-06-20", today="2026-06-20")
+    assert v["scheduled_tasks"][0]["area_name"] == "Work"
+    assert v["scheduled_tasks"][0]["area_color"] == "#a60717"
+    assert v["meetings"][0]["area_name"] == "Work"
