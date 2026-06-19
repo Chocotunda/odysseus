@@ -772,6 +772,10 @@ app.include_router(setup_people_routes())
 from routes.meeting_notes_routes import setup_meeting_notes_routes
 app.include_router(setup_meeting_notes_routes())
 
+# Areas (management-hub life-area nodes)
+from routes.area_routes import setup_area_routes
+app.include_router(setup_area_routes())
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
@@ -867,6 +871,14 @@ async def serve_people(request: Request):
 
 @app.get("/people/{person_id}")
 async def serve_person(request: Request, person_id: str):
+    return await serve_index(request)
+
+@app.get("/areas")
+async def serve_areas(request: Request):
+    return await serve_index(request)
+
+@app.get("/areas/{area_id}")
+async def serve_area(request: Request, area_id: str):
     return await serve_index(request)
 
 @app.get("/backgrounds")
