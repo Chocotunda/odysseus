@@ -38,3 +38,18 @@ def events_in_window(db, cal_ids, start_dt, end_dt):
                          CalendarEvent.dtstart < end_dt),
                 ))
             .all())
+
+
+def events_by_uids(db, uids):
+    """Calendar events matching a set of uids — used by reverse-Link entity pages
+    (Person / Area dashboards) to resolve their linked meetings."""
+    if not uids:
+        return []
+    return db.query(CalendarEvent).filter(CalendarEvent.uid.in_(uids)).all()
+
+
+def expand_event_in_window(ev, start_dt, end_dt):
+    """Expand a CalendarEvent into its in-window occurrence dicts. The single hub
+    dependency on the calendar feature's rrule expansion (routes.calendar_routes)."""
+    from routes.calendar_routes import _expand_rrule
+    return _expand_rrule(ev, start_dt, end_dt)

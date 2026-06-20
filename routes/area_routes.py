@@ -111,8 +111,9 @@ def setup_area_routes():
     def area_page(request: Request, area_id: str):
         from src.links import (links_to, NODE_AREA, NODE_PERSON, NODE_TASK,
                                NODE_NOTE, NODE_MEETING, REL_IN_AREA)
-        from core.database import Note, CalendarEvent
+        from core.database import Note
         from core.hub_models import Person, PlanItem
+        from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
             area = _load(db, request, area_id)
@@ -133,7 +134,7 @@ def setup_area_routes():
             notes = db.query(Note).filter(Note.id.in_(nids)).all() if nids else []
 
             mids = by_type.get(NODE_MEETING, [])
-            meetings = db.query(CalendarEvent).filter(CalendarEvent.uid.in_(mids)).all() if mids else []
+            meetings = events_by_uids(db, mids)
 
             return {
                 "area": _area_to_dict(area),

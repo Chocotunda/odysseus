@@ -142,8 +142,9 @@ def setup_people_routes():
     def person_page(request: Request, person_id: str):
         from datetime import datetime
         from src.links import links_to, NODE_PERSON, NODE_TASK, NODE_NOTE, NODE_MEETING, REL_ABOUT, REL_NOTE_OF, REL_ATTENDED_BY
-        from core.database import Note, CalendarEvent
+        from core.database import Note
         from core.hub_models import PlanItem
+        from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
             person = _load(db, request, person_id)
@@ -171,7 +172,7 @@ def setup_people_routes():
 
             mtg_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ATTENDED_BY)
                        if e.from_type == NODE_MEETING]
-            meetings = db.query(CalendarEvent).filter(CalendarEvent.uid.in_(mtg_ids)).all() if mtg_ids else []
+            meetings = events_by_uids(db, mtg_ids)
 
             return {
                 "person": _person_to_dict(person),

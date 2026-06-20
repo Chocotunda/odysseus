@@ -48,20 +48,22 @@ def main() -> int:
     ap.add_argument("--since", help="override the starting ref (default: stored watermark, else merge-base)")
     args = ap.parse_args()
 
-    if not git("remote").splitlines().__contains__("upstream"):
-        print("✗ no 'upstream' remote configured.", file=sys.stderr)
+    if "upstream" not in git("remote").splitlines():
+        print("[ERR] no 'upstream' remote configured.", file=sys.stderr)
         return 2
 
-    print(f"… fetching {UPSTREAM.split('/')[0]} …")
-    subprocess.run(["git", "fetch", "upstream", "-q"], cwd=WATERMARK.parent.parent)
+    print(f"... fetching {UPSTREAM.split('/')[0]} ...")
+    fetched = subprocess.run(["git", "fetch", "upstream", "-q"], cwd=WATERMARK.parent.parent)
+    if fetched.returncode != 0:
+        print("[!] git fetch upstream failed - scanning against a possibly stale tip.", file=sys.stderr)
 
     since = args.since or (WATERMARK.read_text().strip() if WATERMARK.exists() else FALLBACK_BASE)
     tip = git("rev-parse", UPSTREAM)
     if not tip:
-        print(f"✗ cannot resolve {UPSTREAM}.", file=sys.stderr)
+        print(f"[ERR] cannot resolve {UPSTREAM}.", file=sys.stderr)
         return 2
     if since == tip:
-        print(f"✓ up to date — nothing new on {UPSTREAM} since last scan.")
+        print(f"[OK] up to date — nothing new on {UPSTREAM} since last scan.")
         return 0
 
     # One line per commit: <sha>\x1f<subject>\x1f<files...>
@@ -89,9 +91,9 @@ def main() -> int:
 
     print(f"\nScanned {total} new upstream commit(s) in {rng}.")
     if not hits:
-        print("✓ none look security- or dependency-relevant. (Cosmetic/feature churn — safe to ignore.)")
+        print("[OK] none look security- or dependency-relevant. (Cosmetic/feature churn — safe to ignore.)")
     else:
-        print(f"⚠ {len(hits)} worth a look — cherry-pick the single-user-relevant ones:\n")
+        print(f"[!] {len(hits)} worth a look — cherry-pick the single-user-relevant ones:\n")
         for sha, subject, why in hits:
             print(f"  {sha}  [{why}]  {subject}")
         print("\n  Inspect:   git show <sha>")

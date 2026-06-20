@@ -79,18 +79,17 @@ def _meetings_for_day(db, owner, day):
     # meetings (standups, 1:1s) correctly land on the day. tz handling matches
     # the calendar's own list_events (naive-local windows; is_utc honored on
     # serialization). This is the one place we use real datetime math.
-    from routes.calendar_routes import _expand_rrule
     start_dt = datetime.strptime(f"{day} 00:00", "%Y-%m-%d %H:%M")
     end_dt = start_dt + timedelta(days=1)
 
-    from src.hub_calendar import owner_calendar_ids, events_in_window
+    from src.hub_calendar import owner_calendar_ids, events_in_window, expand_event_in_window
     cal_ids = owner_calendar_ids(db, owner)
     if not cal_ids:
         return []
     rows = events_in_window(db, cal_ids, start_dt, end_dt)
     out = []
     for ev in rows:
-        for d in _expand_rrule(ev, start_dt, end_dt):
+        for d in expand_event_in_window(ev, start_dt, end_dt):
             d.setdefault("series_uid", ev.uid)
             d["area_id"] = None
             d["area_name"] = None
