@@ -4,7 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.database import Base, Area, Link
+from core.database import Base
+from core.hub_models import Area, Link
 from src import links as L
 
 
@@ -111,7 +112,8 @@ def test_area_page_aggregates_members_partitioned(monkeypatch):
     area = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Work"))
 
     db = SF()
-    from core.database import Person, PlanItem, Note, CalendarEvent, CalendarCal, utcnow_naive
+    from core.database import Note, CalendarEvent, CalendarCal, utcnow_naive
+    from core.hub_models import Person, PlanItem
     db.add(Person(id="p1", owner="alice", name="Wiggert"))
     db.add(PlanItem(id="t1", owner="alice", title="Ship", status="open"))
     db.add(PlanItem(id="t2", owner="alice", title="Done one", status="done"))
@@ -140,7 +142,7 @@ def test_area_page_excludes_other_areas(monkeypatch):
     work = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Work"))
     personal = _ep(router, "", "POST")(_request("alice"), area_routes.AreaCreate(name="Personal"))
     db = SF()
-    from core.database import Person
+    from core.hub_models import Person
     db.add(Person(id="p1", owner="alice", name="OnlyPersonal"))
     db.commit()
     L.set_area(db, "alice", L.NODE_PERSON, "p1", personal["id"])

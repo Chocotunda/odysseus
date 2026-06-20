@@ -9,7 +9,7 @@ reverse-Link (in_area) spine, never a per-row column.
 from datetime import datetime, timedelta
 from typing import Optional
 
-from core.database import PlanItem, CalendarCal, CalendarEvent, Area, Link
+from core.hub_models import PlanItem, Area, Link
 from src.links import REL_IN_AREA, NODE_TASK, NODE_MEETING
 
 DEFAULT_ESTIMATE_MIN = 30
@@ -83,29 +83,11 @@ def _meetings_for_day(db, owner, day):
     start_dt = datetime.strptime(f"{day} 00:00", "%Y-%m-%d %H:%M")
     end_dt = start_dt + timedelta(days=1)
 
-    cq = db.query(CalendarCal)
-    if owner is not None:
-        cq = cq.filter(CalendarCal.owner == owner)
-    cal_ids = [c.id for c in cq.all()]
+    from src.hub_calendar import owner_calendar_ids, events_in_window
+    cal_ids = owner_calendar_ids(db, owner)
     if not cal_ids:
         return []
-
-    from sqlalchemy import or_, and_
-    rows = (db.query(CalendarEvent)
-            .filter(
-                CalendarEvent.calendar_id.in_(cal_ids),
-                CalendarEvent.status != "cancelled",
-                or_(
-                    # non-recurring: must overlap the day window
-                    and_(or_(CalendarEvent.rrule == "", CalendarEvent.rrule.is_(None)),
-                         CalendarEvent.dtstart < end_dt,
-                         CalendarEvent.dtend > start_dt),
-                    # recurring: dtstart before window end — _expand_rrule generates the in-window occurrences
-                    and_(CalendarEvent.rrule.isnot(None),
-                         CalendarEvent.rrule != "",
-                         CalendarEvent.dtstart < end_dt),
-                ))
-            .all())
+    rows = events_in_window(db, cal_ids, start_dt, end_dt)
     out = []
     for ev in rows:
         for d in _expand_rrule(ev, start_dt, end_dt):

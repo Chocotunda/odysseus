@@ -111,7 +111,7 @@ def test_person_page_open_tasks_include_note_title_and_overdue(monkeypatch):
     # Back-date the first task to a clearly past date
     from datetime import datetime
     db2 = SF()
-    from core.database import PlanItem
+    from core.hub_models import PlanItem
     overdue_task = db2.query(PlanItem).filter(PlanItem.title == "Send overdue deck").first()
     assert overdue_task is not None
     overdue_task.due_date = "2020-01-01"

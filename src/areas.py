@@ -3,7 +3,7 @@ gets three default life-areas; all are editable nodes thereafter."""
 import uuid
 from typing import Optional
 
-from core.database import Area
+from core.hub_models import Area
 
 # (name, stored hex) — distinct colors from the UI palette.
 SEED_AREAS = [

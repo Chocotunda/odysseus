@@ -5,7 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.database import Base, PlanItem, Note
+from core.database import Base, Note
+from core.hub_models import PlanItem
 from src import links as L
 from src import meeting_notes as MN
 

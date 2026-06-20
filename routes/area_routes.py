@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.database import SessionLocal, Area
+from core.database import SessionLocal
+from core.hub_models import Area
 from src.auth_helpers import require_user
 from src.areas import ensure_seeded_areas
 
@@ -110,7 +111,8 @@ def setup_area_routes():
     def area_page(request: Request, area_id: str):
         from src.links import (links_to, NODE_AREA, NODE_PERSON, NODE_TASK,
                                NODE_NOTE, NODE_MEETING, REL_IN_AREA)
-        from core.database import Person, PlanItem, Note, CalendarEvent
+        from core.database import Note, CalendarEvent
+        from core.hub_models import Person, PlanItem
         db = SessionLocal()
         try:
             area = _load(db, request, area_id)

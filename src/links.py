@@ -7,7 +7,7 @@ referenced by (type, id) pairs, not FKs, so features stay decoupled.
 import uuid
 from typing import List, Optional
 
-from core.database import Link
+from core.hub_models import Link
 
 NODE_NOTE = "note"
 NODE_MEETING = "meeting"

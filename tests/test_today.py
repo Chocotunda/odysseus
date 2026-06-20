@@ -4,7 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.database import Base, PlanItem, CalendarCal, CalendarEvent, Area, utcnow_naive
+from core.database import Base, CalendarCal, CalendarEvent, utcnow_naive
+from core.hub_models import PlanItem, Area
 from src import links as L
 from src import today as T
 

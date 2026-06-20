@@ -135,8 +135,7 @@ async def extract_action_items(content, person_name, owner=None):
     """One-shot extraction of action items from meeting-note prose. Returns the
     raw list (caller coerces). Raises on transport/config failure so the caller
     can degrade to the user's hand-typed items."""
-    from src.endpoint_resolver import resolve_endpoint
-    from src.llm_core import llm_call_async
+    from src.hub_llm import resolve_endpoint, llm_call_async
 
     url, model, headers = resolve_endpoint("utility", owner=owner)
     if not url or not model:
@@ -175,8 +174,7 @@ async def parse_capture(
     it is already YYYY-MM-DD; resolving fuzzy phrases ("fri", "next week") in
     Python via dateutil/user-tz is a Phase 2 refinement.
     """
-    from src.endpoint_resolver import resolve_endpoint
-    from src.llm_core import llm_call_async
+    from src.hub_llm import resolve_endpoint, llm_call_async
 
     # Capture/planning deliberately use the small "utility" lane (a fast 4B),
     # NOT the chat model — capture should stay cheap and simple, and this keeps

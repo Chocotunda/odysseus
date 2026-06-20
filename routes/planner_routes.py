@@ -14,7 +14,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 
-from core.database import SessionLocal, PlanItem, PlanProject, utcnow_naive
+from core.database import SessionLocal, utcnow_naive
+from core.hub_models import PlanItem, PlanProject
 from src.auth_helpers import require_user
 from src import planner_ai
 

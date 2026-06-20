@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.database import SessionLocal, PlanItem, Person, Note, Area
+from core.database import SessionLocal, Note
+from core.hub_models import PlanItem, Person, Area
 from src.auth_helpers import require_user
 from src import today as today_logic
 from src import links as L

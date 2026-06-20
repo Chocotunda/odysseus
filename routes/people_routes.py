@@ -10,7 +10,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.database import SessionLocal, Person
+from core.database import SessionLocal
+from core.hub_models import Person
 from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,8 @@ def setup_people_routes():
     def person_page(request: Request, person_id: str):
         from datetime import datetime
         from src.links import links_to, NODE_PERSON, NODE_TASK, NODE_NOTE, NODE_MEETING, REL_ABOUT, REL_NOTE_OF, REL_ATTENDED_BY
-        from core.database import PlanItem, Note, CalendarEvent
+        from core.database import Note, CalendarEvent
+        from core.hub_models import PlanItem
         db = SessionLocal()
         try:
             person = _load(db, request, person_id)

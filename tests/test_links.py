@@ -6,7 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.database import Base, Link
+from core.database import Base
+from core.hub_models import Link
 from src import links as L
 
 

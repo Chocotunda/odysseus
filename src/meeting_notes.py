@@ -12,7 +12,8 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from core.database import Note, PlanItem, SessionLocal
+from core.database import Note, SessionLocal
+from core.hub_models import PlanItem
 from src import links as L
 
 logger = logging.getLogger(__name__)
@@ -137,7 +138,7 @@ async def enrich_meeting_note(note_id: str, owner: Optional[str]) -> None:
             return
         person_name = ""
         for e in L.links_from(db, owner, L.NODE_NOTE, note_id, rel=L.REL_ABOUT):
-            from core.database import Person
+            from core.hub_models import Person
             p = db.query(Person).filter(Person.id == e.to_id).first()
             if p:
                 person_name = p.name

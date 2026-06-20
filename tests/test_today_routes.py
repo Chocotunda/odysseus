@@ -6,7 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from core.database import Base, PlanItem, Person, Note
+from core.database import Base, Note
+from core.hub_models import PlanItem, Person
 from src import links as L
 import routes.today_routes as today_routes
 

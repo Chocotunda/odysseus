@@ -9,7 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from types import SimpleNamespace
 
-from core.database import Base, PlanItem
+from core.database import Base
+from core.hub_models import PlanItem
 import routes.planner_routes as planner_routes
 
 
