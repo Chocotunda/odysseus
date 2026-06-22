@@ -13,7 +13,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from core.database import Note, SessionLocal
-from core.hub_models import PlanItem
+from core.hub_models import PlanItem, next_plan_item_seq
 from src import links as L
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ def promote_action_item(db, owner: Optional[str], note_id: str, title: str,
                     due_date=due_date, ordinal=_max_ordinal(db, owner) + 1024,
                     source="meeting_note", source_note_id=note_id,
                     source_event_id=event_uid, person_id=person_id)
+    item.seq = next_plan_item_seq(db, owner)
     db.add(item)
     db.commit()
     L.add_link(db, owner, L.NODE_TASK, item.id, L.REL_FROM_NOTE, L.NODE_NOTE, note_id)

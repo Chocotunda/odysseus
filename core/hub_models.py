@@ -235,6 +235,15 @@ def _migrate_add_plan_item_seq_column():
             pass
 
 
+def next_plan_item_seq(db, owner) -> int:
+    """Next per-owner monotonic write sequence for PlanItem (the /items/changes cursor).
+    Any code that writes a PlanItem MUST set `seq = next_plan_item_seq(db, owner)` before
+    commit, or the row/edit will never appear in the delta feed (seq > since skips NULL)."""
+    from sqlalchemy import func
+    current = db.query(func.max(PlanItem.seq)).filter(PlanItem.owner == owner).scalar()
+    return (current or 0) + 1
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""

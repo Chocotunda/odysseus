@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import SessionLocal, Note
-from core.hub_models import PlanItem, Person, Area
+from core.hub_models import PlanItem, Person, Area, next_plan_item_seq
 from src.auth_helpers import require_user
 from src import today as today_logic
 from src import links as L
@@ -106,6 +106,7 @@ def setup_today_routes() -> APIRouter:
             t = _load_task(db, request, task_id)
             t.planned_day = body.planned_day
             t.planned_start = body.planned_start
+            t.seq = next_plan_item_seq(db, t.owner)
             db.commit()
             db.refresh(t)
             return {"id": t.id, "planned_day": t.planned_day, "planned_start": t.planned_start}

@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def _next_seq_global(db, owner: Optional[str]) -> int:
-    current = db.query(func.max(PlanItem.seq)).filter(PlanItem.owner == owner).scalar()
-    return (current or 0) + 1
+    from core.hub_models import next_plan_item_seq
+    return next_plan_item_seq(db, owner)
 
 
 # Float-gap step for ordinal allocation (drag-reorder inserts the midpoint;
@@ -125,7 +125,6 @@ def _ordinal_between(a: Optional[float], b: Optional[float]) -> float:
     if b is None:
         return a + ORDINAL_GAP
     return (a + b) / 2
-
 
 
 async def enrich_item(item_id: str, text: str, owner: Optional[str]) -> None:
