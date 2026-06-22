@@ -165,7 +165,8 @@ def setup_people_routes():
             task_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)
                         if e.from_type == NODE_TASK]
             tasks = (db.query(PlanItem)
-                     .filter(PlanItem.id.in_(task_ids), PlanItem.status == "open").all()) if task_ids else []
+                     .filter(PlanItem.id.in_(task_ids), PlanItem.status == "open",
+                             PlanItem.deleted_at.is_(None)).all()) if task_ids else []
             # overdue-first: items with a due_date sort before those without, ascending
             tasks.sort(key=lambda t: (t.due_date is None, t.due_date or ""))
 

@@ -48,7 +48,9 @@ def _task_dict(item: PlanItem) -> Dict[str, Any]:
 
 def _max_ordinal(db, owner: Optional[str]) -> int:
     from sqlalchemy import func
-    val = db.query(func.max(PlanItem.ordinal)).filter(PlanItem.owner == owner).scalar()
+    val = db.query(func.max(PlanItem.ordinal)).filter(
+        PlanItem.owner == owner, PlanItem.deleted_at.is_(None)
+    ).scalar()
     return (val or 0)
 
 
@@ -62,7 +64,8 @@ def promote_action_item(db, owner: Optional[str], note_id: str, title: str,
     existing_ids = {e.from_id for e in L.links_to(db, owner, L.NODE_NOTE, note_id, rel=L.REL_FROM_NOTE)}
     if existing_ids:
         dup = (db.query(PlanItem)
-               .filter(PlanItem.id.in_(existing_ids), PlanItem.title == title).first())
+               .filter(PlanItem.id.in_(existing_ids), PlanItem.title == title,
+                       PlanItem.deleted_at.is_(None)).first())
         if dup:
             return _task_dict(dup)
 

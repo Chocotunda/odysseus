@@ -37,7 +37,7 @@ def day_view(db, owner: Optional[str], day: str, *, today: Optional[str] = None)
     today = today or _local_today()
     is_today = (day == today)
 
-    q = db.query(PlanItem).filter(PlanItem.status == "open")
+    q = db.query(PlanItem).filter(PlanItem.status == "open", PlanItem.deleted_at.is_(None))
     if owner is not None:
         q = q.filter(PlanItem.owner == owner)
     open_tasks = q.all()

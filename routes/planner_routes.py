@@ -85,10 +85,13 @@ def _item_to_dict(item: PlanItem) -> Dict[str, Any]:
         "title": item.title,
         "notes": item.notes,
         "planned_day": item.planned_day,
+        "planned_start": item.planned_start,
         "due_date": item.due_date,
         "priority": item.priority,
         "status": item.status,
         "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+        "deleted": item.deleted_at is not None,
+        "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
         "estimate_minutes": item.estimate_minutes,
         "ordinal": item.ordinal,
         "project_id": item.project_id,
@@ -182,10 +185,14 @@ def setup_planner_routes(task_scheduler=None):
             raise HTTPException(404, "Task not found")
         if user is not None and item.owner != user:
             raise HTTPException(404, "Task not found")
+        if item.deleted_at is not None:
+            raise HTTPException(404, "Task not found")
         return item
 
     def _next_ordinal(db, user: Optional[str]) -> int:
-        current = db.query(func.max(PlanItem.ordinal)).filter(PlanItem.owner == user).scalar()
+        current = db.query(func.max(PlanItem.ordinal)).filter(
+            PlanItem.owner == user, PlanItem.deleted_at.is_(None)
+        ).scalar()
         return (current or 0) + ORDINAL_GAP
 
     # --- LIST ---
@@ -205,6 +212,7 @@ def setup_planner_routes(task_scheduler=None):
             # leak them to every user.
             if user is not None:
                 q = q.filter(PlanItem.owner == user)
+            q = q.filter(PlanItem.deleted_at.is_(None))
             if day is not None:
                 q = q.filter(PlanItem.planned_day == day)
             if status is not None:
@@ -346,6 +354,20 @@ def setup_planner_routes(task_scheduler=None):
                 fields.pop("status")                        # ignore an invalid status rather than corrupt it
             for k, v in fields.items():
                 setattr(item, k, v)
+            db.commit()
+            db.refresh(item)
+            return _item_to_dict(item)
+        finally:
+            db.close()
+
+    # --- DELETE (soft): set the tombstone so the change syncs to clients ---
+    @router.delete("/items/{item_id}")
+    def delete_item(request: Request, item_id: str):
+        user = _owner(request, TODO_WRITE_SCOPES)
+        db = SessionLocal()
+        try:
+            item = _get_owned(db, item_id, user)   # 404s if already tombstoned
+            item.deleted_at = utcnow_naive()
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)

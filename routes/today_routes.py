@@ -45,7 +45,7 @@ def setup_today_routes() -> APIRouter:
 
     def _load_task(db, request: Request, task_id: str) -> PlanItem:
         owner = _owner(request)
-        t = db.query(PlanItem).filter(PlanItem.id == task_id).first()
+        t = db.query(PlanItem).filter(PlanItem.id == task_id, PlanItem.deleted_at.is_(None)).first()
         if not t or (owner is not None and t.owner != owner):
             raise HTTPException(status_code=404, detail="task not found")
         return t

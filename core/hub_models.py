@@ -62,6 +62,7 @@ class PlanItem(TimestampMixin, Base):
     priority      = Column(String, default="normal")  # none|normal|important|urgent
     status        = Column(String, default="open")    # open|in_progress|done|cancelled
     completed_at  = Column(DateTime, nullable=True)
+    deleted_at    = Column(DateTime, nullable=True, index=True)   # soft-delete tombstone; NULL = live
     # effort
     estimate_minutes = Column(Integer, nullable=True)
     # ordering (float-gap scheme; new items at max+1024.0; midpoint for reorder)
@@ -145,6 +146,31 @@ class Area(TimestampMixin, Base):
     __table_args__ = (Index('ix_areas_owner_archived', 'owner', 'archived'),)
 
 
+def _migrate_add_plan_item_deleted_at_column():
+    """Add `deleted_at` (soft-delete tombstone) to plan_items. Guarded + idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(plan_items)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE plan_items ADD COLUMN deleted_at DATETIME")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_plan_items_deleted_at ON plan_items(deleted_at)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'deleted_at' to plan_items")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"plan_items.deleted_at migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _migrate_add_plan_item_planned_start_column():
     """Add `planned_start` ('HH:MM' time-block) to plan_items. Guarded + idempotent.
 
@@ -178,3 +204,4 @@ def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
     _migrate_add_plan_item_planned_start_column()
+    _migrate_add_plan_item_deleted_at_column()

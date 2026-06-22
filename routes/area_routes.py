@@ -139,7 +139,8 @@ def setup_area_routes():
 
             tids = by_type.get(NODE_TASK, [])
             tasks = (db.query(PlanItem)
-                     .filter(PlanItem.id.in_(tids), PlanItem.status == "open").all()) if tids else []
+                     .filter(PlanItem.id.in_(tids), PlanItem.status == "open",
+                             PlanItem.deleted_at.is_(None)).all()) if tids else []
             tasks.sort(key=lambda t: (t.due_date is None, t.due_date or ""))
 
             nids = by_type.get(NODE_NOTE, [])
