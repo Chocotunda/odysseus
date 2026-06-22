@@ -4,6 +4,8 @@
 **Status:** Direction approved (brainstorm). Phase 0 = "Stand up Hermes + talk to it."
 **Inputs:** 3 research workflows (`wf_097fac70-ae4` dossier, `wf_226cef28-1af` coding/deploy/access, `wf_60868741-fff` hosting/models/privacy). Memory: `hermes-agent-eval`.
 
+> **⚠️ EXPANDED & PARTLY SUPERSEDED (2026-06-22):** this doc captured the early Hermes-hybrid framing. The authoritative, complete record — including the later decisions (native **Tide** as the client, not a web frontend; the fork/B2 conclusion; notes/Obsidian vault; hosting) and all 8 research workflows with sources — is **`docs/ai-context/2026-06-22-life-os-direction-decision-record.md`**. Read that first; this remains valid for the Hermes-specific detail (memory toggles, MCP config, hardening).
+
 ## 1. The decision
 
 Adopt **Hermes Agent** (Nous Research) as the **always-on autonomous + phone-reach + coding-orchestration layer**, while **Odysseus stays the canonical graph / second-brain AND the private vault**. This is a *hybrid with a hard boundary*, not a pivot.

@@ -10,6 +10,8 @@ Odysseus is a self-hosted, local-first AI workspace (chat, autonomous agents, de
 
 > **Agent-generated PR policy (from CONTRIBUTING.md):** maintainers ask LLM agents to open an *issue* describing the problem rather than opening PRs directly; bulk agent PRs that don't match the project's visual style/format are closed without review. Keep this in mind before proposing to open PRs.
 
+> **Project direction (READ FIRST for strategic context):** this fork is being grown into a personal "life OS" / management hub. The authoritative decision record — vision, every angle considered, findings (with sources), the settled architecture, and the build plan — is **`docs/ai-context/2026-06-22-life-os-direction-decision-record.md`**. In short: Odysseus = the **brain** (canonical connected graph + `.md` vault + MCP/API + web back-office; stay a tracking fork via a thin **agnostic core / B2**, do NOT hard-fork, do NOT rebuild the vanilla frontend); **Tide** (SwiftUI, separate repo) = the polished **macOS+iOS client**; **Hermes** (or a swappable agent) = an optional always-on orchestrator over MCP, never the source of truth. See also `docs/ai-context/HANDOFF.md` (session-by-session) and the `docs/superpowers/specs/2026-06-*` specs.
+
 ## Commands
 
 Setup (manual dev):
