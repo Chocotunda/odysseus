@@ -33,6 +33,7 @@ TODO_WRITE_SCOPES = {"todos:write"}
 
 
 class PlanItemCreate(BaseModel):
+    id: Optional[str] = None
     title: str = ""
     notes: Optional[str] = None
     planned_day: Optional[str] = None
@@ -274,8 +275,15 @@ def setup_planner_routes(task_scheduler=None):
         user = _owner(request, TODO_WRITE_SCOPES)
         db = SessionLocal()
         try:
+            # Idempotent create on a client-supplied id (optimistic-create support).
+            if body.id:
+                existing = db.query(PlanItem).filter(PlanItem.id == body.id).first()
+                if existing is not None:
+                    if user is not None and existing.owner != user:
+                        raise HTTPException(404, "Task not found")  # never collide across owners
+                    return _item_to_dict(existing)                  # idempotent: return existing, no dup
             item = PlanItem(
-                id=str(uuid.uuid4()),
+                id=body.id or str(uuid.uuid4()),
                 owner=user,                         # always a concrete owner (or None in single-user)
                 title=body.title or "",
                 notes=body.notes,
