@@ -16,6 +16,9 @@ from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
 
+PEOPLE_READ_SCOPES = {"people:read", "people:write"}
+PEOPLE_WRITE_SCOPES = {"people:write"}
+
 
 class PersonCreate(BaseModel):
     name: str = ""
@@ -45,11 +48,20 @@ def _person_to_dict(p: Person, area_id: Optional[str] = None) -> Dict[str, Any]:
 def setup_people_routes():
     router = APIRouter(prefix="/api/people", tags=["people"])
 
-    def _owner(request: Request) -> Optional[str]:
+    def _owner(request: Request, allowed: set) -> Optional[str]:
+        # Token callers must carry one of `allowed`; browser sessions bypass.
+        if getattr(request.state, "api_token", False):
+            scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+            if not scopes.intersection(allowed):
+                raise HTTPException(403, f"API token missing required scope: {' or '.join(sorted(allowed))}")
+            owner = getattr(request.state, "api_token_owner", None)
+            if not owner:
+                raise HTTPException(403, "API token has no owner")
+            return owner
         return require_user(request) or None
 
-    def _load(db, request: Request, person_id: str) -> Person:
-        owner = _owner(request)
+    def _load(db, request: Request, person_id: str, allowed: set) -> Person:
+        owner = _owner(request, allowed)
         p = db.query(Person).filter(Person.id == person_id).first()
         if not p or (owner is not None and p.owner != owner):
             raise HTTPException(status_code=404, detail="person not found")
@@ -71,7 +83,7 @@ def setup_people_routes():
 
     @router.get("")
     def list_people(request: Request):
-        owner = _owner(request)
+        owner = _owner(request, PEOPLE_READ_SCOPES)
         db = SessionLocal()
         try:
             q = db.query(Person).filter(Person.archived == False)  # noqa: E712
@@ -85,7 +97,7 @@ def setup_people_routes():
 
     @router.post("")
     def create_person(request: Request, body: PersonCreate):
-        owner = _owner(request)
+        owner = _owner(request, PEOPLE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             p = Person(id=str(uuid.uuid4()), owner=owner, name=(body.name or "").strip(),
@@ -103,7 +115,7 @@ def setup_people_routes():
     def get_person(request: Request, person_id: str):
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id)
+            p = _load(db, request, person_id, PEOPLE_READ_SCOPES)
             return _person_to_dict(p, _area_of(db, p.owner, p.id))
         finally:
             db.close()
@@ -112,7 +124,7 @@ def setup_people_routes():
     def update_person(request: Request, person_id: str, body: PersonUpdate):
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id)
+            p = _load(db, request, person_id, PEOPLE_WRITE_SCOPES)
             for field in ("name", "email", "role", "contact_uid", "archived"):
                 val = getattr(body, field)
                 if val is not None:
@@ -130,7 +142,7 @@ def setup_people_routes():
         from src.links import remove_links_for, NODE_PERSON
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id)
+            p = _load(db, request, person_id, PEOPLE_WRITE_SCOPES)
             remove_links_for(db, p.owner, NODE_PERSON, p.id)
             db.delete(p)
             db.commit()
@@ -147,7 +159,7 @@ def setup_people_routes():
         from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
-            person = _load(db, request, person_id)
+            person = _load(db, request, person_id, PEOPLE_READ_SCOPES)
             owner = person.owner
 
             task_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)

@@ -14,6 +14,9 @@ from src.areas import ensure_seeded_areas
 
 logger = logging.getLogger(__name__)
 
+AREA_READ_SCOPES = {"areas:read", "areas:write"}
+AREA_WRITE_SCOPES = {"areas:write"}
+
 
 class AreaCreate(BaseModel):
     name: str = ""
@@ -35,11 +38,20 @@ def _area_to_dict(a: Area) -> Dict[str, Any]:
 def setup_area_routes():
     router = APIRouter(prefix="/api/areas", tags=["areas"])
 
-    def _owner(request: Request) -> Optional[str]:
+    def _owner(request: Request, allowed: set) -> Optional[str]:
+        # Token callers must carry one of `allowed`; browser sessions bypass.
+        if getattr(request.state, "api_token", False):
+            scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+            if not scopes.intersection(allowed):
+                raise HTTPException(403, f"API token missing required scope: {' or '.join(sorted(allowed))}")
+            owner = getattr(request.state, "api_token_owner", None)
+            if not owner:
+                raise HTTPException(403, "API token has no owner")
+            return owner
         return require_user(request) or None
 
-    def _load(db, request: Request, area_id: str) -> Area:
-        owner = _owner(request)
+    def _load(db, request: Request, area_id: str, allowed: set) -> Area:
+        owner = _owner(request, allowed)
         a = db.query(Area).filter(Area.id == area_id).first()
         if not a or (owner is not None and a.owner != owner):
             raise HTTPException(status_code=404, detail="area not found")
@@ -47,7 +59,7 @@ def setup_area_routes():
 
     @router.get("")
     def list_areas(request: Request):
-        owner = _owner(request)
+        owner = _owner(request, AREA_READ_SCOPES)
         db = SessionLocal()
         try:
             ensure_seeded_areas(db, owner)
@@ -61,7 +73,7 @@ def setup_area_routes():
 
     @router.post("")
     def create_area(request: Request, body: AreaCreate):
-        owner = _owner(request)
+        owner = _owner(request, AREA_WRITE_SCOPES)
         db = SessionLocal()
         try:
             a = Area(id=str(uuid.uuid4()), owner=owner,
@@ -76,7 +88,7 @@ def setup_area_routes():
     def get_area(request: Request, area_id: str):
         db = SessionLocal()
         try:
-            return _area_to_dict(_load(db, request, area_id))
+            return _area_to_dict(_load(db, request, area_id, AREA_READ_SCOPES))
         finally:
             db.close()
 
@@ -84,7 +96,7 @@ def setup_area_routes():
     def update_area(request: Request, area_id: str, body: AreaUpdate):
         db = SessionLocal()
         try:
-            a = _load(db, request, area_id)
+            a = _load(db, request, area_id, AREA_WRITE_SCOPES)
             for field in ("name", "color", "sort_order", "archived"):
                 val = getattr(body, field)
                 if val is not None:
@@ -99,7 +111,7 @@ def setup_area_routes():
         from src.links import remove_links_for, NODE_AREA
         db = SessionLocal()
         try:
-            a = _load(db, request, area_id)
+            a = _load(db, request, area_id, AREA_WRITE_SCOPES)
             remove_links_for(db, a.owner, NODE_AREA, a.id)
             db.delete(a)
             db.commit()
@@ -116,7 +128,7 @@ def setup_area_routes():
         from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
-            area = _load(db, request, area_id)
+            area = _load(db, request, area_id, AREA_READ_SCOPES)
             owner = area.owner
             by_type: Dict[str, list] = {}
             for e in links_to(db, owner, NODE_AREA, area_id, rel=REL_IN_AREA):
