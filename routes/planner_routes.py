@@ -22,6 +22,12 @@ from src import planner_ai
 
 logger = logging.getLogger(__name__)
 
+
+def _next_seq_global(db, owner: Optional[str]) -> int:
+    current = db.query(func.max(PlanItem.seq)).filter(PlanItem.owner == owner).scalar()
+    return (current or 0) + 1
+
+
 # Float-gap step for ordinal allocation (drag-reorder inserts the midpoint;
 # adjacent gaps shrinking below 2 trigger a rebalance — added with reorder).
 ORDINAL_GAP = 1024.0
@@ -96,6 +102,7 @@ def _item_to_dict(item: PlanItem) -> Dict[str, Any]:
         "deleted_at": item.deleted_at.isoformat() if item.deleted_at else None,
         "estimate_minutes": item.estimate_minutes,
         "ordinal": item.ordinal,
+        "seq": item.seq,
         "project_id": item.project_id,
         "source": item.source,
         "source_note_id": item.source_note_id,
@@ -165,6 +172,7 @@ async def enrich_item(item_id: str, text: str, owner: Optional[str]) -> None:
         except Exception:
             logger.exception("planner enrichment failed; keeping raw item")
         item.ai_content_hash = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+        item.seq = _next_seq_global(db, owner)
         db.commit()
     finally:
         db.close()
@@ -209,6 +217,11 @@ def setup_planner_routes(task_scheduler=None):
             PlanItem.owner == user, PlanItem.deleted_at.is_(None)
         ).scalar()
         return (current or 0) + ORDINAL_GAP
+
+    def _next_seq(db, user: Optional[str]) -> int:
+        # Per-owner monotonic. NOT filtered by deleted_at — tombstones occupy seq
+        # space and a delete itself bumps seq so the change feed carries it.
+        return _next_seq_global(db, user)
 
     # --- LIST ---
     @router.get("/items")
@@ -301,6 +314,7 @@ def setup_planner_routes(task_scheduler=None):
                 person_id=body.person_id,
             )
             db.add(item)
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
@@ -316,6 +330,7 @@ def setup_planner_routes(task_scheduler=None):
             item = _get_owned(db, item_id, user)
             item.status = "done"
             item.completed_at = utcnow_naive()
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
@@ -340,6 +355,7 @@ def setup_planner_routes(task_scheduler=None):
                 ordinal=_next_ordinal(db, user),
             )
             db.add(item)
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             out = _item_to_dict(item)
@@ -357,6 +373,7 @@ def setup_planner_routes(task_scheduler=None):
         try:
             item = _get_owned(db, item_id, user)
             item.planned_day = body.planned_day
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
@@ -376,6 +393,7 @@ def setup_planner_routes(task_scheduler=None):
                 before.ordinal if before else None,
                 after.ordinal if after else None,
             )
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
@@ -396,6 +414,7 @@ def setup_planner_routes(task_scheduler=None):
                 fields.pop("status")                        # ignore an invalid status rather than corrupt it
             for k, v in fields.items():
                 setattr(item, k, v)
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
@@ -410,6 +429,7 @@ def setup_planner_routes(task_scheduler=None):
         try:
             item = _get_owned(db, item_id, user)   # 404s if already tombstoned
             item.deleted_at = utcnow_naive()
+            item.seq = _next_seq(db, user)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)

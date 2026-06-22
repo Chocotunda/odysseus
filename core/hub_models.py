@@ -63,6 +63,7 @@ class PlanItem(TimestampMixin, Base):
     status        = Column(String, default="open")    # open|in_progress|done|cancelled
     completed_at  = Column(DateTime, nullable=True)
     deleted_at    = Column(DateTime, nullable=True, index=True)   # soft-delete tombstone; NULL = live
+    seq           = Column(Integer, index=True)   # per-owner monotonic write sequence; the ?since= cursor
     # effort
     estimate_minutes = Column(Integer, nullable=True)
     # ordering (float-gap scheme; new items at max+1024.0; midpoint for reorder)
@@ -200,8 +201,43 @@ def _migrate_add_plan_item_planned_start_column():
             pass
 
 
+def _migrate_add_plan_item_seq_column():
+    """Add per-owner monotonic `seq` to plan_items + backfill existing rows. Guarded + idempotent."""
+    import sqlite3
+    from collections import defaultdict
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(plan_items)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "seq" not in columns:
+            conn.execute("ALTER TABLE plan_items ADD COLUMN seq INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_plan_items_seq ON plan_items(seq)")
+            # backfill: per-owner 1..N in a stable (updated_at, id) order
+            rows = conn.execute(
+                "SELECT id, owner FROM plan_items ORDER BY owner, updated_at, id"
+            ).fetchall()
+            counters = defaultdict(int)
+            for rid, owner in rows:
+                counters[owner] += 1
+                conn.execute("UPDATE plan_items SET seq = ? WHERE id = ?", (counters[owner], rid))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added + backfilled 'seq' on plan_items")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"plan_items.seq migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
     _migrate_add_plan_item_planned_start_column()
     _migrate_add_plan_item_deleted_at_column()
+    _migrate_add_plan_item_seq_column()
