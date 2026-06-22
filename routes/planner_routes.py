@@ -8,7 +8,7 @@ logic (AI capture, surfacing, scheduling) lives in src/planner_*.py.
 import hashlib
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -129,7 +129,7 @@ def _parse_since(s: Optional[str]) -> Optional[datetime]:
         raise HTTPException(400, "Invalid 'since' timestamp (expected ISO-8601)")
     # stored values are naive UTC (utcnow_naive); normalize tz-aware input to naive UTC.
     if dt.tzinfo is not None:
-        dt = dt.astimezone(tz=None).replace(tzinfo=None)
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 

@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from types import SimpleNamespace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from core.database import Base, utcnow_naive
 from core.hub_models import PlanItem
@@ -69,6 +69,33 @@ def test_changes_since_is_inclusive_and_includes_tombstones(monkeypatch):
     assert old_id not in ids         # before the watermark
     assert tomb_id in ids            # tombstone surfaced
     assert next(i for i in out["items"] if i["id"] == tomb_id)["deleted"] is True
+
+
+def test_changes_since_tz_aware_normalises_to_utc(monkeypatch):
+    """A tz-aware ?since= in a non-UTC offset must be normalised to naive UTC.
+
+    Passes the boundary instant as +05:30 offset; the endpoint must convert it
+    back to the same UTC moment so the boundary row is returned (inclusive >=).
+    This test FAILS against the buggy `astimezone(tz=None)` code (local tz) and
+    PASSES after fixing to `astimezone(timezone.utc)`.
+    """
+    SF = _sf()
+    monkeypatch.setattr(planner_routes, "SessionLocal", SF)
+    old = utcnow_naive() - timedelta(hours=2)
+    boundary = utcnow_naive() - timedelta(hours=1)
+    _seed(SF, "alice", old, title="old")
+    boundary_id = _seed(SF, "alice", boundary, title="boundary")
+    router = planner_routes.setup_planner_routes()
+    changes = _endpoint(router, "/items/changes", "GET")
+
+    # Express the boundary instant as a tz-aware string in +05:30 (IST)
+    boundary_utc_aware = boundary.replace(tzinfo=timezone.utc)
+    boundary_ist = boundary_utc_aware.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    since_str = boundary_ist.isoformat()  # e.g. "...+05:30"
+
+    out = changes(_req("alice"), since=since_str)
+    ids = {i["id"] for i in out["items"]}
+    assert boundary_id in ids   # normalised back to UTC → inclusive >=
 
 
 def test_changes_malformed_since_400(monkeypatch):
