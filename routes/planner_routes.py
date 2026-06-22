@@ -8,7 +8,6 @@ logic (AI capture, surfacing, scheduling) lives in src/planner_*.py.
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -128,18 +127,6 @@ def _ordinal_between(a: Optional[float], b: Optional[float]) -> float:
     return (a + b) / 2
 
 
-def _parse_since(s: Optional[str]) -> Optional[datetime]:
-    if not s:
-        return None
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        raise HTTPException(400, "Invalid 'since' timestamp (expected ISO-8601)")
-    # stored values are naive UTC (utcnow_naive); normalize tz-aware input to naive UTC.
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
 
 async def enrich_item(item_id: str, text: str, owner: Optional[str]) -> None:
     """Background enrichment of a captured item with AI-parsed fields.
@@ -252,23 +239,21 @@ def setup_planner_routes(task_scheduler=None):
         finally:
             db.close()
 
-    # --- CHANGES (delta sync): rows updated since the watermark, incl. tombstones ---
+    # --- CHANGES (delta sync): rows with seq > since, incl. tombstones ---
     @router.get("/items/changes")
-    def list_changes(request: Request, since: Optional[str] = None):
+    def list_changes(request: Request, since: Optional[int] = None):
         user = _owner(request, TODO_READ_SCOPES)
-        since_dt = _parse_since(since)
         db = SessionLocal()
         try:
             q = db.query(PlanItem)
             if user is not None:
                 q = q.filter(PlanItem.owner == user)
-            if since_dt is not None:
-                q = q.filter(PlanItem.updated_at >= since_dt)   # inclusive; client upserts by id
-            items = q.order_by(PlanItem.updated_at.asc()).all()
+            if since is not None:
+                q = q.filter(PlanItem.seq > since)        # exclusive; seq is unique-per-owner monotonic
+            items = q.order_by(PlanItem.seq.asc()).all()
             dicts = [_item_to_dict(it) for it in items]
-            cursor = max((it.updated_at for it in items), default=None)
-            cursor_iso = cursor.isoformat() if cursor else utcnow_naive().isoformat()
-            return {"items": dicts, "cursor": cursor_iso}
+            cursor = max((it.seq for it in items), default=(since or 0))
+            return {"items": dicts, "cursor": cursor}
         finally:
             db.close()
 
