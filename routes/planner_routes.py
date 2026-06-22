@@ -21,9 +21,9 @@ from src import planner_ai
 
 logger = logging.getLogger(__name__)
 
-# Integer-gap step for ordinal allocation (drag-reorder inserts the midpoint;
+# Float-gap step for ordinal allocation (drag-reorder inserts the midpoint;
 # adjacent gaps shrinking below 2 trigger a rebalance — added with reorder).
-ORDINAL_GAP = 1024
+ORDINAL_GAP = 1024.0
 
 # API-token scope gates (browser/cookie sessions bypass these — they auth by
 # cookie). Reads accept either todos scope; writes require todos:write.
@@ -54,6 +54,11 @@ class CaptureBody(BaseModel):
     text: str = ""
 
 
+class ReorderBody(BaseModel):
+    before_id: Optional[str] = None   # item directly above the drop point (None = top)
+    after_id: Optional[str] = None    # item directly below the drop point (None = bottom)
+
+
 def _item_to_dict(item: PlanItem) -> Dict[str, Any]:
     return {
         "id": item.id,
@@ -77,6 +82,18 @@ def _item_to_dict(item: PlanItem) -> Dict[str, Any]:
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
+
+
+def _ordinal_between(a: Optional[float], b: Optional[float]) -> float:
+    # TODO: rebalance a bucket if a midpoint gap collapses (~50 same-gap inserts
+    # before Double precision exhausts) — matches TideCore's Ordinal TODO.
+    if a is None and b is None:
+        return 0.0
+    if a is None:
+        return b - ORDINAL_GAP
+    if b is None:
+        return a + ORDINAL_GAP
+    return (a + b) / 2
 
 
 async def enrich_item(item_id: str, text: str, owner: Optional[str]) -> None:
@@ -270,6 +287,25 @@ def setup_planner_routes(task_scheduler=None):
         try:
             item = _get_owned(db, item_id, user)
             item.planned_day = body.planned_day
+            db.commit()
+            db.refresh(item)
+            return _item_to_dict(item)
+        finally:
+            db.close()
+
+    # --- REORDER (drag): place item between two neighbours (either may be None) ---
+    @router.post("/items/{item_id}/reorder")
+    def reorder_item(request: Request, item_id: str, body: ReorderBody):
+        user = _owner(request, TODO_WRITE_SCOPES)
+        db = SessionLocal()
+        try:
+            item = _get_owned(db, item_id, user)
+            before = _get_owned(db, body.before_id, user) if body.before_id else None
+            after = _get_owned(db, body.after_id, user) if body.after_id else None
+            item.ordinal = _ordinal_between(
+                before.ordinal if before else None,
+                after.ordinal if after else None,
+            )
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)

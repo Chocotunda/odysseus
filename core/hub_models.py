@@ -9,7 +9,7 @@ import os
 import logging
 
 from sqlalchemy import (
-    Column, String, Text, Boolean, DateTime, Integer, ForeignKey, Index,
+    Column, String, Text, Boolean, DateTime, Float, Integer, ForeignKey, Index,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -64,8 +64,8 @@ class PlanItem(TimestampMixin, Base):
     completed_at  = Column(DateTime, nullable=True)
     # effort
     estimate_minutes = Column(Integer, nullable=True)
-    # ordering (integer-gap scheme; new items at max+1024)
-    ordinal       = Column(Integer, default=0, index=True)
+    # ordering (float-gap scheme; new items at max+1024.0; midpoint for reorder)
+    ordinal       = Column(Float, default=0, index=True)
     # grouping
     project_id    = Column(String, ForeignKey("plan_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     source        = Column(String, default="user")       # user|agent|email|calendar|capture
