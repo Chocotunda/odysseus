@@ -59,6 +59,26 @@ class ReorderBody(BaseModel):
     after_id: Optional[str] = None    # item directly below the drop point (None = bottom)
 
 
+_VALID_PRIORITY = {"none", "normal", "important", "urgent"}
+_VALID_STATUS = {"open", "in_progress", "done", "cancelled"}
+
+
+class PlanItemPatch(BaseModel):
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    planned_day: Optional[str] = None
+    due_date: Optional[str] = None
+    planned_start: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+    estimate_minutes: Optional[int] = None
+    project_id: Optional[str] = None
+    ordinal: Optional[float] = None
+    source_note_id: Optional[str] = None
+    source_event_id: Optional[str] = None
+    person_id: Optional[str] = None
+
+
 def _item_to_dict(item: PlanItem) -> Dict[str, Any]:
     return {
         "id": item.id,
@@ -306,6 +326,26 @@ def setup_planner_routes(task_scheduler=None):
                 before.ordinal if before else None,
                 after.ordinal if after else None,
             )
+            db.commit()
+            db.refresh(item)
+            return _item_to_dict(item)
+        finally:
+            db.close()
+
+    # --- PATCH (partial update; absent key != explicit null) ---
+    @router.patch("/items/{item_id}")
+    def patch_item(request: Request, item_id: str, body: PlanItemPatch):
+        user = _owner(request, TODO_WRITE_SCOPES)
+        db = SessionLocal()
+        try:
+            item = _get_owned(db, item_id, user)
+            fields = body.model_dump(exclude_unset=True)   # only keys the client sent
+            if "priority" in fields and fields["priority"] not in _VALID_PRIORITY:
+                fields["priority"] = "normal"
+            if "status" in fields and fields["status"] not in _VALID_STATUS:
+                fields.pop("status")                        # ignore an invalid status rather than corrupt it
+            for k, v in fields.items():
+                setattr(item, k, v)
             db.commit()
             db.refresh(item)
             return _item_to_dict(item)
