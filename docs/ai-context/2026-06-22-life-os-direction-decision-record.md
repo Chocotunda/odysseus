@@ -94,6 +94,11 @@ This section records *what was discussed and rejected*, so decisions aren't re-l
 - **Findings (3-agent Tide investigation, §4):** Tide is a mature, agent-built (4 days, 184 commits, 141 tests) realization of *this exact form-factor* — "your day's command center, one brain, two surfaces" — with a clean separable `TideCore` brain (SurfacingEngine, CaptureDirectiveParser, fractional Ordinals, DayMath) that is a near-perfect **blueprint + tested logic reference**, and `TideTask` ↔ `PlanItem` map cleanly.
 - **Conclusion:** Tide = **the polished daily client** (chosen, §3.5). `TideCore`'s SurfacingEngine + CaptureDirectiveParser **stay in Tide** (client-side, already built + tested — not ported to Python). Odysseus does the smart server-side graph-linking.
 
+### 3.9 CloudKit-canonical vs self-hosted-sync — the sync architecture *(resolved 2026-06-22, 4-agent research)*
+- **Considered:** make Apple **CloudKit the canonical store** (free, built-in offline/auth/E2E, zero server) vs **Odysseus canonical** with a hand-rolled client sync; and whether to run *both*.
+- **Findings (§4):** CloudKit-canonical is **disqualified for a non-Apple brain** on three independent grounds — (1) a Linux/Python server **cannot read/write a user's CloudKit *private* DB** (server-to-server keys are public-DB-only; the private DB needs interactive 30-min Apple-ID web auth — a hard, never-relaxed policy wall), so the agent / web back-office / `.md`-vault could never reach the canonical data; (2) **SwiftData+CloudKit** is bug-prone through 2026 (incl. an iOS 26.4 update that broke `CKSubscription` for "countless apps"); (3) running CloudKit **and** a self-hosted sync over one store is a known **split-brain** anti-pattern (silent data loss). CloudKit-canonical is right **only** for Apple-only apps with no web/Linux surface (e.g. Bear) — which contradicts the life-OS vision.
+- **Conclusion:** **Odysseus canonical, CloudKit dropped.** Tide is an **online-first** client with a **local cache + optimistic writes (+ small retry buffer)**; **durable offline-write is deferred** to a later phase — validated **SOLID-WITH-CAVEATS** (an *extension, not a rewrite*) *iff* the day-1 invariants hold: **client-UUIDs + server upsert-on-PK**, idempotency-key = the UUID, an **authoritative (not opportunistic) local store**, soft-delete tombstones, additive-only migrations, and an optimistic UI that never shows "saved" before ACK. **Cache layer = GRDB / Point-Free SQLiteData**, *not* SwiftData (SwiftData-local's unfixed `@ModelActor`→`@Query` refresh bug + iOS-26.1 store-corruption risk hit the sync-cache design directly). **Hand-rolled** sync — no Swift library fits a self-hosted REST/SQLite backend (PowerSync/ElectricSQL/Zero need Postgres; Realm/Atlas Device Sync is EOL Sep-2025) — but the contract stays **PowerSync-compatible** for a future Postgres move. Precedent: **Linear / Figma / Notion / Things / Todoist** all use local-store + server-ordered cursor + idempotent mutation queue and deliberately **avoid CRDTs**; LWW is fine single-user.
+
 ---
 
 ## 4. Key findings from research (with confidence + sources)
@@ -115,6 +120,11 @@ Confidence is flagged because **Hermes-specific facts were repeatedly unreliable
 | Obsidian vault viable as shared store; hybrid (`.md` body + DB graph); single-writer collapses sync risk | Medium-High (no production precedent for the SQL+agent+mobile trio → prototype) | `wf_ac973fcc` |
 | Tide: mature agent-built form-factor; `TideCore` portable blueprint; `TideTask`↔`PlanItem` map | High (read against the repo) | 3-agent Tide investigation |
 | B2 extraction is runtime-correct, complete, no blockers | High (adversarially verified on a fresh DB) | `wf_0a01bd84` |
+| **CloudKit private DB unreachable by a non-Apple server** (S2S key = public-DB-only; private DB needs interactive 30-min web auth) | High | sync research 2026-06-22 agent A — Apple archived CloudKit Web Services docs; Apple Dev Forums thread/84754 (2017-22, unresolved) |
+| SwiftData+CloudKit immature thru 2026 (custom-migration breakage; iOS 26.4 broke `CKSubscription`); two-writer split-brain is a known anti-pattern | High | sync research agent B — Apple Dev Forums; mjtsai; Notion/Linear eng |
+| SwiftData-**local** `@ModelActor`→`@Query` refresh bug **unfixed since Jul 2024**; iOS 26.1 array-attr store corruption → use **GRDB/SQLiteData** as the cache | High | sync research agent C — Apple Dev Forums 759364 / 806161 / 761522; Point-Free SQLiteData |
+| **No Swift sync library fits a self-hosted REST/SQLite backend** (PowerSync/Electric/Zero=Postgres; Realm/Atlas Device Sync EOL Sep-2025) → hand-roll; stay PowerSync-compatible | High | sync research agent D — vendor docs/changelogs |
+| Online-first + local cache + optimistic writes, **offline deferred = SOLID-WITH-CAVEATS** (extension not rewrite *iff* invariants held); LWW fine single-user; **`?since=` cursor should be a monotonic per-owner sequence**, not raw `updated_at` | High / Med-High (cursor) | sync research agent A1 + app survey — Kleppmann SE-Radio #716 (Apr 2026); Notion eng blog; Todoist Sync API; Linear sync engine; Figma blog |
 
 ---
 
@@ -136,7 +146,8 @@ Confidence is flagged because **Hermes-specific facts were repeatedly unreliable
    TIDE (SwiftUI) = THE POLISHED DAILY CLIENT (macOS + iOS)
         • capture, tasks, notes/markdown editing, the board, Do-Next surfacing
         • SurfacingEngine + CaptureDirectiveParser stay in TideCore (client-side)
-        • local SwiftData cache + offline sync → Odysseus canonical
+        • local GRDB/SQLiteData cache (NOT SwiftData); ONLINE-FIRST + optimistic
+          writes (durable offline DEFERRED) → Odysseus canonical; CloudKit dropped
 
    HOST: cheap always-on box (VPS / ~$200 mini-PC) for the brain; Tailscale to phone.
    SYNC: tana-lynk machinery (id-map / content-hash / watermark / tombstone).
@@ -149,15 +160,15 @@ Confidence is flagged because **Hermes-specific facts were repeatedly unreliable
 
 Decomposed into shippable sub-projects (XL overall, ~3-5 months per the native-client scoping). Each gets its own spec → plan → TDD build.
 
-- **1a — Odysseus client API readiness** *(the no-regret first build; small Python, in-repo, serves Tide AND the agent/MCP)*: add `people:`/`areas:` token scopes; a PATCH/update + reorder route for `PlanItem` (reorder mirroring TideCore's fractional `Ordinal` scheme); a `?since=` watermark; soft-delete/tombstones; expose the graph as MCP tools (read-mostly + confirm-on-write).
-- **1b — Tide networking + offline sync**: URLSession client + Keychain bearer token + token Settings screen; **hybrid offline sync** (Tide local SwiftData cache + PendingOp queue → Odysseus canonical), using the `tana-lynk` patterns. Task layer first (TideTask↔PlanItem) = the "80% moment".
+- **1a — Odysseus client API readiness** — ✅ **SHIPPED** (merged+pushed `dev @ 027e4a5`, 6 commits, 68 tests + live smoke): `people:`/`areas:` token scopes + `tide` profile; PATCH + server-computed reorder (TideCore `Ordinal.between`); `?since=` delta + soft-delete tombstones; LWW by `updated_at`. *Deferred from 1a:* MCP-tools exposure (its own spec); People/Areas incremental sync (slice 3). Spec/plan: `docs/superpowers/{specs,plans}/2026-06-22-odysseus-client-api-readiness-slice-1a*`; memory `client-api-readiness-slice-1a`.
+- **1b — Tide as an online-first Odysseus client** *(decomposed; see §3.9)* — **1b-0 (Odysseus):** contract amendments — accept client-supplied `id` on create (upsert-on-PK / idempotent) + add a **monotonic per-owner `seq`** column, switch `?since=` to the `seq` cursor (`updated_at` stays the LWW tie-breaker). **1b-1 (Tide):** persistence **SwiftData → GRDB/SQLiteData**, behavior-preserving (141 tests green), CloudKit dropped. **1b-2 (Tide):** the sync engine — `OdysseusClient` (URLSession + DTOs) + `SyncCoordinator` (pull `?since=seq` upsert-by-UUID + tombstone-delete; optimistic writes + idempotency + retry buffer; `NWPathMonitor`) + `SyncConfig` (URL in UserDefaults, token in Keychain) + a Settings screen. Task layer first (TideTask↔PlanItem) = the "80% moment".
 - **2 — Tide markdown notes editing → the `.md` vault** (native editor; `.md`-canonical).
-- **3 — People / Notes / Meetings surfaces in Tide** (net-new SwiftUI; the graph surfaces).
+- **3 — People / Notes / Meetings surfaces in Tide** (net-new SwiftUI; the graph surfaces; this is when People/Areas get their own `?since=`/soft-delete).
 - **Parallel/when-ready — Hosting**: deploy the brain to a cheap always-on box + Tailscale (does not block building).
 - **Later/optional — Agent layer**: Hermes (or a thin bot) as the always-on orchestrator over the API/MCP — *after* verifying Hermes hands-on.
 - **Meeting transcription** (a Tide-native feature; macOS-strong) slots in when wanted.
 
-**Recommended next action:** spec **slice 1a**.
+**Recommended next action:** spec **slice 1b** (then build 1b-0 → 1b-1 → 1b-2).
 
 ---
 
@@ -171,6 +182,10 @@ Decomposed into shippable sub-projects (XL overall, ~3-5 months per the native-c
 - **Disconnect triggers** (when hard-forking flips to correct): a real >½-day merge conflict in `core/database.py`/`app.py`; upstream ships a native tasks/people/planner surface (collides with our tables); merge cadence slips >1 month twice; upstream abandoned; AGPL relicense.
 - **The Tauri `odysseus-app` wrapper is slated for retirement** (Tide replaces it as the macOS app).
 - **Make the upstream security-scan recurring** (cron line / launchd) — `scripts/hub_upstream_security_scan.py`.
+- **CloudKit was evaluated and rejected** (§3.9) — do not relitigate "why not just use CloudKit?" without a *new* constraint (the blocker is structural: a non-Apple brain can't reach the CloudKit private DB).
+- **`?since=` cursor amendment owed to 1a:** the merged 1a contract uses raw `updated_at` as the cursor; 1b-0 must switch it to a **monotonic per-owner `seq`** (`updated_at` stays the LWW tie-breaker) before more clients depend on it.
+- **Cache = GRDB/SQLiteData, not SwiftData** — driven by SwiftData-local's unfixed `@ModelActor`→`@Query` refresh bug + OS-level store-corruption risk; revisit only if Apple fixes those *and* there's a real reason.
+- **LWW silently clobbers concurrent unrelated field edits** (e.g. "done offline" overwriting a title edited elsewhere) — acceptable single-user; flag the fields that are unsafe to clobber if/when collaboration is ever added.
 
 ---
 
@@ -200,5 +215,6 @@ Eight workflows + a 3-agent codebase investigation. Full structured outputs are 
 | `wf_efeb728d-17c` | "Fighting the grain?" | Anthropic Managed Agents, LangGraph checkpointers, MCP, Airtable/Workday "agent system of record" |
 | `wf_ac973fcc-332` | Obsidian vault viability | Obsidian docs, Local REST API plugin, obsidian-mcp servers, org-roam/MarkdownDB prior art |
 | 3-agent Explore | Tide history / form-factor / architecture | the Tide repo (`docs/superpowers/specs|plans|research`, `Sources/TideCore`, git log) |
+| sync research 2026-06-22 (6 background agents + verifier, adversarial) | CloudKit-canonical feasibility/tradeoffs; Swift sync-library landscape; SwiftData-as-local-cache soundness; online-first-deferred-offline pattern + app survey | Apple archived CloudKit Web Services docs; Apple Dev Forums 84754/759364/806161/761522; PowerSync/ElectricSQL/Zero/Realm vendor docs; Point-Free SQLiteData; Kleppmann SE-Radio #716; Notion eng blog; Todoist Sync API; Linear sync engine; Figma blog; Ink&Switch local-first essay. **Honesty note:** per-app *internals* (Things/Bear/TickTick/Sunsama) are medium-confidence; the CloudKit private-DB wall + the SwiftData bugs are high-confidence (Apple's own docs/forums) |
 
 **Related internal docs/memories:** `docs/superpowers/specs/2026-06-20-hermes-odysseus-hybrid-direction.md`; memories `client-native-tide-decision`, `fork-strategy-decision`, `hermes-agent-eval`, `management-hub-build`, `planner-workspace-vision`, `tana-lynk-integration-hub`, `odysseus-app-companion`; `docs/ai-context/HANDOFF.md`.
