@@ -1,5 +1,7 @@
 # Odysseus App — Quick-Capture Companion Implementation Plan
 
+> **⚠️ SUPERSEDED 2026-06-23 — completed historical build plan.** Native **Tide** is now the daily client; the Tauri `odysseus-app` wrapper this plan built is **FROZEN** (interim backend-booter + web-back-office shell only). Not current direction. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a native macOS menubar app (Tauri v2) whose global hotkey pops a tiny capture bar that creates a Planner item in Odysseus via an API token.

@@ -1,5 +1,7 @@
 # Odysseus App — Backend Lifecycle Management (v2) Implementation Plan
 
+> **⚠️ SUPERSEDED 2026-06-23 — completed historical build plan, but STILL the live backend-boot path.** Native **Tide** is now the daily client and the wrapper is **FROZEN** — but its backend auto-boot (`backend.rs`, ~200 LOC) is the wrapper job NOT yet re-homed, so it remains the interim Mac backend-booter until the always-on host or a salvaged standalone launcher takes over. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Mac app auto-start the Odysseus backend (uvicorn + ChromaDB) when it's not running, own those processes, and stop them on quit — with a confirm dialog before ever stopping a backend it didn't start.

@@ -1,5 +1,7 @@
 # Odysseus App — full-workspace native wrap (v1: thin wrap)
 
+> **⚠️ SUPERSEDED 2026-06-23 — historical build record.** Native **Tide** is now the daily client; this full-workspace wrapper is **FROZEN** (kept only as the interim backend-booter + web-back-office shell until the always-on host lands, then decommissioned). Not current direction. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 **Date:** 2026-06-17
 **Status:** Design approved, pre-implementation
 **Repo for implementation:** `/Users/kganpat/Projects/odysseus-app` (separate sibling repo, pushed to `Chocotunda/odysseus-app`)

@@ -1,5 +1,7 @@
 # Odysseus App — native quick-capture companion (Phase 1 / MVP A)
 
+> **⚠️ SUPERSEDED 2026-06-23 — historical build record.** The Tauri `odysseus-app` wrapper described here shipped, but native **Tide** is now the daily client; the wrapper is **FROZEN** (kept only as the interim backend-booter + web-back-office shell until the always-on host lands, then decommissioned). Not current direction. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 **Date:** 2026-06-16
 **Status:** Design approved, pre-implementation
 **Related:** `planner-feature-design.md` (the in-app Planner), HANDOFF.md "Next Steps #1 + #3"

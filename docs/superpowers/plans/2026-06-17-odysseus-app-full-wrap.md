@@ -1,5 +1,7 @@
 # Odysseus App — Full-Workspace Native Wrap (v1) Implementation Plan
 
+> **⚠️ SUPERSEDED 2026-06-23 — completed historical build plan.** Native **Tide** is now the daily client; the full-workspace wrapper this plan built is **FROZEN** (interim backend-booter + web-back-office shell only). Not current direction. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a full Odysseus workspace window to the existing menubar capture app — a native macOS window hosting the live web UI at `http://127.0.0.1:7860/`, with the capture overlay untouched.

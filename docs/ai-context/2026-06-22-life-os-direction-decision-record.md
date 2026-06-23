@@ -1,7 +1,7 @@
 # Life-OS Direction — Decision Record, Findings & Plan
 
 **Date:** 2026-06-22
-**Status:** Direction settled end-to-end; first build identified (not yet started).
+**Status:** Direction settled end-to-end. **Update 2026-06-23 (re-evaluated, §10):** slices 1a / 1b-0 / 1b-1 / 1b-2 are **SHIPPED** and the Tide↔Odysseus task-sync loop is **working on-device (user-confirmed)** — the client decision is now *validated*, not merely decided. The Tauri `odysseus-app` wrapper is **FROZEN** (no longer the daily client; kept only as the interim web-back-office shell + backend auto-booter until the always-on host lands). It is **not** "retired" yet — two of its jobs (backend lifecycle, desktop back-office window) are not re-homed.
 **Scope:** Consolidates a long multi-session deliberation about whether/how to involve **Hermes Agent**, whether to **hard-fork** Odysseus, where **notes** live, what the **frontend/client** should be, **iOS**, **hosting**, and **Tide's** role. Supersedes nothing but pulls together: the memories (`hermes-agent-eval`, `fork-strategy-decision`, `client-native-tide-decision`, `management-hub-build`, `planner-workspace-vision`, `tana-lynk-integration-hub`), the prior spec (`docs/superpowers/specs/2026-06-20-hermes-odysseus-hybrid-direction.md`), and 8 research workflows (provenance in §9).
 
 > **How to read this:** §1 is the answer. §2 is the why. §3 is the full deliberation (every angle, including rejected options and reversals). §4 is what the research found (with honest confidence). §5–6 are the conclusion and plan. §7 is what's still open. §8 is what already shipped. §9 is sources.
@@ -161,14 +161,14 @@ Confidence is flagged because **Hermes-specific facts were repeatedly unreliable
 Decomposed into shippable sub-projects (XL overall, ~3-5 months per the native-client scoping). Each gets its own spec → plan → TDD build.
 
 - **1a — Odysseus client API readiness** — ✅ **SHIPPED** (merged+pushed `dev @ 027e4a5`, 6 commits, 68 tests + live smoke): `people:`/`areas:` token scopes + `tide` profile; PATCH + server-computed reorder (TideCore `Ordinal.between`); `?since=` delta + soft-delete tombstones; LWW by `updated_at`. *Deferred from 1a:* MCP-tools exposure (its own spec); People/Areas incremental sync (slice 3). Spec/plan: `docs/superpowers/{specs,plans}/2026-06-22-odysseus-client-api-readiness-slice-1a*`; memory `client-api-readiness-slice-1a`.
-- **1b — Tide as an online-first Odysseus client** *(decomposed; see §3.9)* — **1b-0 (Odysseus):** contract amendments — accept client-supplied `id` on create (upsert-on-PK / idempotent) + add a **monotonic per-owner `seq`** column, switch `?since=` to the `seq` cursor (`updated_at` stays the LWW tie-breaker). **1b-1 (Tide):** persistence **SwiftData → GRDB/SQLiteData**, behavior-preserving (141 tests green), CloudKit dropped. **1b-2 (Tide):** the sync engine — `OdysseusClient` (URLSession + DTOs) + `SyncCoordinator` (pull `?since=seq` upsert-by-UUID + tombstone-delete; optimistic writes + idempotency + retry buffer; `NWPathMonitor`) + `SyncConfig` (URL in UserDefaults, token in Keychain) + a Settings screen. Task layer first (TideTask↔PlanItem) = the "80% moment".
+- **1b — Tide as an online-first Odysseus client** — ✅ **SHIPPED** (1b-0 Odysseus `dev @ f85638d`; 1b-1/1b-2 Tide `master @ b476cd9`; task-sync loop **user-confirmed on-device 2026-06-23**, see §10). *(decomposed; see §3.9)* — **1b-0 (Odysseus):** contract amendments — accept client-supplied `id` on create (upsert-on-PK / idempotent) + add a **monotonic per-owner `seq`** column, switch `?since=` to the `seq` cursor (`updated_at` stays the LWW tie-breaker). **1b-1 (Tide):** persistence **SwiftData → GRDB/SQLiteData**, behavior-preserving (141 tests green), CloudKit dropped. **1b-2 (Tide):** the sync engine — `OdysseusClient` (URLSession + DTOs) + `SyncCoordinator` (pull `?since=seq` upsert-by-UUID + tombstone-delete; optimistic writes + idempotency + retry buffer; `NWPathMonitor`) + `SyncConfig` (URL in UserDefaults, token in Keychain) + a Settings screen. Task layer first (TideTask↔PlanItem) = the "80% moment".
 - **2 — Tide markdown notes editing → the `.md` vault** (native editor; `.md`-canonical).
 - **3 — People / Notes / Meetings surfaces in Tide** (net-new SwiftUI; the graph surfaces; this is when People/Areas get their own `?since=`/soft-delete).
 - **Parallel/when-ready — Hosting**: deploy the brain to a cheap always-on box + Tailscale (does not block building).
 - **Later/optional — Agent layer**: Hermes (or a thin bot) as the always-on orchestrator over the API/MCP — *after* verifying Hermes hands-on.
 - **Meeting transcription** (a Tide-native feature; macOS-strong) slots in when wanted.
 
-**Recommended next action:** spec **slice 1b** (then build 1b-0 → 1b-1 → 1b-2).
+**Recommended next action:** Tide **slice 2** (the `.md` vault) — slices 1a–1b-2 are shipped and the task-sync loop is live. (Parallel, non-blocking: re-home backend lifecycle onto the always-on host so the wrapper can eventually be decommissioned — see §10.)
 
 ---
 
@@ -180,10 +180,10 @@ Decomposed into shippable sub-projects (XL overall, ~3-5 months per the native-c
 - **Mobile vault sync** is the weak link if notes are ever edited outside Tide; single-writer (Tide-only editing) keeps it safe.
 - **Obsidian/SQL/agent/mobile sync trio has no production precedent** → prototype small before committing.
 - **Disconnect triggers** (when hard-forking flips to correct): a real >½-day merge conflict in `core/database.py`/`app.py`; upstream ships a native tasks/people/planner surface (collides with our tables); merge cadence slips >1 month twice; upstream abandoned; AGPL relicense.
-- **The Tauri `odysseus-app` wrapper is slated for retirement** (Tide replaces it as the macOS app).
+- **The Tauri `odysseus-app` wrapper is FROZEN, not retired** (re-evaluated 2026-06-23, §10). Tide has replaced its **daily-client** role (working on-device), so stop investing in it — but **keep it installed** as (a) the interim single-window desktop shell onto the web back-office (email/calendar/research/chat/model-config — which Tide deliberately will *never* cover) and (b) the **backend auto-booter/owner** (uvicorn+ChromaDB; Tide is a sync client, not a process supervisor). **Decommission is gated on:** the always-on host (or a salvaged ~200-line standalone launcher from `backend.rs`) taking over backend lifecycle, **and** Tide-native quick-capture reaching parity. Until then, "retire" is premature — it would silently leave nothing to start the backend. The web back-office itself is **not** retired (still actively maintained; reachable in any browser at `127.0.0.1:7860`).
 - **Make the upstream security-scan recurring** (cron line / launchd) — `scripts/hub_upstream_security_scan.py`.
 - **CloudKit was evaluated and rejected** (§3.9) — do not relitigate "why not just use CloudKit?" without a *new* constraint (the blocker is structural: a non-Apple brain can't reach the CloudKit private DB).
-- **`?since=` cursor amendment owed to 1a:** the merged 1a contract uses raw `updated_at` as the cursor; 1b-0 must switch it to a **monotonic per-owner `seq`** (`updated_at` stays the LWW tie-breaker) before more clients depend on it.
+- **`?since=` cursor amendment** — ✅ DONE in 1b-0 (`dev @ b867812/f85638d`): the cursor is now a **monotonic per-owner `seq`** (`updated_at` stays the LWW tie-breaker). Any new `PlanItem` writer MUST allocate `seq` via `core.hub_models.next_plan_item_seq`.
 - **Cache = GRDB/SQLiteData, not SwiftData** — driven by SwiftData-local's unfixed `@ModelActor`→`@Query` refresh bug + OS-level store-corruption risk; revisit only if Apple fixes those *and* there's a real reason.
 - **LWW silently clobbers concurrent unrelated field edits** (e.g. "done offline" overwriting a title edited elsewhere) — acceptable single-user; flag the fields that are unsafe to clobber if/when collaboration is ever added.
 
@@ -218,3 +218,23 @@ Eight workflows + a 3-agent codebase investigation. Full structured outputs are 
 | sync research 2026-06-22 (6 background agents + verifier, adversarial) | CloudKit-canonical feasibility/tradeoffs; Swift sync-library landscape; SwiftData-as-local-cache soundness; online-first-deferred-offline pattern + app survey | Apple archived CloudKit Web Services docs; Apple Dev Forums 84754/759364/806161/761522; PowerSync/ElectricSQL/Zero/Realm vendor docs; Point-Free SQLiteData; Kleppmann SE-Radio #716; Notion eng blog; Todoist Sync API; Linear sync engine; Figma blog; Ink&Switch local-first essay. **Honesty note:** per-app *internals* (Things/Bear/TickTick/Sunsama) are medium-confidence; the CloudKit private-DB wall + the SwiftData bugs are high-confidence (Apple's own docs/forums) |
 
 **Related internal docs/memories:** `docs/superpowers/specs/2026-06-20-hermes-odysseus-hybrid-direction.md`; memories `client-native-tide-decision`, `fork-strategy-decision`, `hermes-agent-eval`, `management-hub-build`, `planner-workspace-vision`, `tana-lynk-integration-hub`, `odysseus-app-companion`; `docs/ai-context/HANDOFF.md`.
+
+---
+
+## 10. Re-evaluation — the Tide pivot vs the Tauri wrapper (2026-06-23)
+
+After the sync loop shipped, the user observed the de-facto shift toward Tide and asked for a hard re-evaluation of the findings/research/handoff. A workflow mapped every direction artifact, then adversarially stress-tested the shift from four independent lenses (strategic-product, effort/maintenance/risk, devil's-advocate, consistency-auditor). **All four landed on `sound-with-caveats` (high confidence).**
+
+**Verdict — the Tide-first shift is sound, and now *validated* not just decided.** The biggest execution risk (could a hand-rolled, online-first, no-CloudKit sync against the Odysseus REST contract actually work?) is answered: slices 1a/1b-0/1b-1/1b-2 are shipped and the task round-trip is user-confirmed on-device (board pulls, edits round-trip, 30s poll surfaces external changes, web FE updates live). Native genuinely wins for the *vision* on **capture quality, iOS (the wrapper has no iOS story at all), and the polish ceiling**. Note: the *stated* driver — "WebView perf ceiling" — was admitted self-inflicted and was already fixed (idle GPU ~25-35% → ~0%), so the perf argument is moot; native still wins on the other three axes.
+
+**The one real caveat — the pivot conflated two separable decisions.** *"Tide is the task client"* is proven; *"therefore retire the wrapper"* is not. The wrapper did **two jobs Tide explicitly will never do** (backend auto-boot/lifecycle; single-window desktop access to the web back-office), and retirement named no successor for either. The deferred always-on host is the only planned answer for backend lifecycle.
+
+**Decisions taken (user, 2026-06-23):**
+1. **Wrapper → FREEZE + SALVAGE** (not retire). Stop investing; keep it installed as the interim back-office shell + backend booter. Salvage the ~200-line `backend.rs` lifecycle into a standalone launchd/menubar launcher *if/when* convenient. Actual decommission is gated on backend lifecycle being re-homed **and** Tide capture parity.
+2. **Backend lifecycle → re-home onto the always-on host** (VPS/mini-PC + Tailscale). Until that lands, the wrapper stays the desktop booter. This is the explicit operational dependency that blocks wrapper decommission.
+
+**Reusable knowledge preserved, not deleted:** the wrapper's hard-won macOS engineering (non-activating NSPanel overlay, Screen-Time occlusion-crash fix, `ody-native-focus` blur-pause, Cmd-Q/Edit-menu/dialog-deadlock fixes, TCC signing) is kept as a "reusable-if-any-Tide-surface-embeds-WKWebView" post-mortem. The two WebView perf *fixes* live in the **Odysseus web frontend** (`theme.js` fps-cap, `body.app-blurred` pause, box-shadow→opacity) and still benefit the browser back-office.
+
+**What this re-eval confirms (do not relitigate):** native Tide as the daily client; Odysseus-canonical / CloudKit-rejected (structural); the hand-rolled online-first sync architecture; web frontend kept as-is; per-client 30s polling near-term (ntfy-push is a known deferred upgrade); the wrapper's only un-replaced value is back-office packaging + backend boot.
+
+**Re-eval provenance:** workflow `wf_eaf48a5d-99a` (9 agents; 4 mapping readers + 4 adversarial lenses + synthesis).

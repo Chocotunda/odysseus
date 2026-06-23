@@ -1,5 +1,7 @@
 # Odysseus App — backend lifecycle management (v2)
 
+> **⚠️ SUPERSEDED 2026-06-23 — historical build record, but STILL the live backend-boot path.** Native **Tide** is now the daily client and the wrapper is **FROZEN** — yet the backend auto-boot/ownership this doc describes is exactly the wrapper job NOT yet re-homed; it stays the interim Mac backend-booter until the always-on host (or a salvaged standalone launcher from `backend.rs`) takes over. See `docs/ai-context/2026-06-22-life-os-direction-decision-record.md` §10.
+
 **Date:** 2026-06-18
 **Status:** Design approved, pre-implementation
 **Repo for implementation:** `/Users/kganpat/Projects/odysseus-app` (`master`, full-wrap v1 already shipped)
