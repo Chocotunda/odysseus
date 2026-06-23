@@ -12,6 +12,10 @@ let _open = false;
 let _escHandler = null;
 let _view = 'overview';                 // 'overview' | 'timeline'
 let _day = null;                        // 'YYYY-MM-DD' currently shown
+let _cursor = 0;                        // /items/changes seq watermark (change detector)
+let _syncTimer = null;
+let _visHandler = null;
+const _SYNC_MS = 30000;                 // re-check for cross-source changes every 30s
 
 const ICON_TODAY =
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -184,6 +188,41 @@ async function _reload() {
   catch (e) { const b = document.getElementById('today-body'); if (b) b.innerHTML = `<div class="today-empty">failed to load</div>`; }
 }
 
+// --- live change detection: reuse the /items/changes cursor (the same contract
+//     Tide consumes) to reload the day ONLY when something actually changed, so we
+//     don't re-render the panel on every tick. ---
+async function _seedCursor() {
+  try {
+    const res = await fetch(`${API_BASE}/api/planner/items/changes?since=0`, { credentials: 'same-origin' });
+    if (res.ok) { const d = await res.json(); if (typeof d.cursor === 'number') _cursor = d.cursor; }
+  } catch (e) { /* ignore — first poll will catch up */ }
+}
+
+async function _pollChanges() {
+  if (!_open) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/planner/items/changes?since=${_cursor}`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const changed = (data.items || []).length > 0;
+    if (typeof data.cursor === 'number' && data.cursor > _cursor) _cursor = data.cursor;
+    // Re-render only on a real change, and not while a detail panel is open.
+    if (changed && !document.getElementById('today-detail')?.classList.contains('open')) _reload();
+  } catch (e) { /* transient — retry next tick */ }
+}
+
+function _startSync() {
+  _stopSync();
+  _syncTimer = setInterval(_pollChanges, _SYNC_MS);
+  _visHandler = () => { if (document.visibilityState === 'visible') _pollChanges(); };
+  document.addEventListener('visibilitychange', _visHandler);
+}
+
+function _stopSync() {
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+  if (_visHandler) { document.removeEventListener('visibilitychange', _visHandler); _visHandler = null; }
+}
+
 async function _showTaskDetail(id) {
   let d; try { d = await _fetchTask(id); } catch (e) { return; }
   const t = d.task;
@@ -227,6 +266,7 @@ function _closeDetail() { const p = document.getElementById('today-detail'); if 
 
 function _close() {
   _open = false;
+  _stopSync();
   const p = document.getElementById('today-panel'); if (p) p.remove();
   if (_escHandler) { document.removeEventListener('keydown', _escHandler); _escHandler = null; }
 }
@@ -271,6 +311,7 @@ function openToday() {
   _escHandler = (e) => { if (e.key === 'Escape') { if (document.getElementById('today-detail')?.classList.contains('open')) _closeDetail(); else _close(); } };
   document.addEventListener('keydown', _escHandler);
   _reload();
+  _seedCursor().then(_startSync);
 }
 
 window.openToday = openToday;

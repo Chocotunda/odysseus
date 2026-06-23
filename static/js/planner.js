@@ -13,6 +13,10 @@ let _items = [];
 let _filter = 'all';   // all | today | backlog | done
 let _capturing = false;
 const _enriching = new Set();   // ids currently being polled for AI enrichment
+let _cursor = 0;                // monotonic seq watermark for delta sync
+let _syncTimer = null;          // periodic /items/changes poll while the panel is open
+let _visHandler = null;
+const _SYNC_MS = 30000;         // pull cross-source changes (Tide, enrichment, other tabs) every 30s
 
 // --- inline monochrome SVG icons (no emoji per project style) ---
 const ICON_PLANNER =
@@ -50,10 +54,47 @@ async function _fetchItems() {
     if (!res.ok) { _items = []; return; }
     const data = await res.json();
     _items = data.items || [];
+    for (const it of _items) { const s = Number(it.seq) || 0; if (s > _cursor) _cursor = s; }
   } catch (e) {
     console.error('planner: fetch failed', e);
     _items = [];
   }
+}
+
+// --- live delta sync (reuses the same /items/changes contract Tide consumes) ---
+function _applyChange(it) {
+  const idx = _items.findIndex(x => x.id === it.id);
+  if (it.deleted) { if (idx >= 0) _items.splice(idx, 1); }
+  else if (idx >= 0) _items[idx] = it;
+  else _items.push(it);
+}
+
+async function _pollChanges() {
+  if (!_open) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/planner/items/changes?since=${_cursor}`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const incoming = data.items || [];
+    for (const it of incoming) _applyChange(it);
+    if (typeof data.cursor === 'number' && data.cursor > _cursor) _cursor = data.cursor;
+    if (incoming.length) {
+      _items.sort((a, b) => (a.ordinal || 0) - (b.ordinal || 0));   // match the server's ordinal-asc order
+      _render();
+    }
+  } catch (e) { /* transient — retry on the next tick */ }
+}
+
+function _startSync() {
+  _stopSync();
+  _syncTimer = setInterval(_pollChanges, _SYNC_MS);
+  _visHandler = () => { if (document.visibilityState === 'visible') _pollChanges(); };
+  document.addEventListener('visibilitychange', _visHandler);
+}
+
+function _stopSync() {
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+  if (_visHandler) { document.removeEventListener('visibilitychange', _visHandler); _visHandler = null; }
 }
 
 async function _capture(text) {
@@ -249,7 +290,7 @@ export function openPanel() {
   _wire(pane);
   document.getElementById('planner-capture-input')?.focus();
 
-  _fetchItems().then(_render);
+  _fetchItems().then(() => { _render(); _startSync(); });
 
   _escHandler = (e) => { if (e.key === 'Escape') closePanel(); };
   document.addEventListener('keydown', _escHandler);
@@ -260,6 +301,7 @@ let _escHandler = null;
 export function closePanel() {
   if (!_open) return;
   _open = false;
+  _stopSync();
   try { document.getElementById('planner-backdrop')?.remove(); } catch {}
   if (_escHandler) { document.removeEventListener('keydown', _escHandler); _escHandler = null; }
 }
