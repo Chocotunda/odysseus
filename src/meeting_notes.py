@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from core.database import Note, SessionLocal
 from core.hub_models import PlanItem, next_plan_item_seq
 from src import links as L
+import src.notes_service as notes_service
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
         note = Note(id=str(uuid.uuid4()), owner=owner, title=title, content=content,
                     items=json.dumps(action_items), note_type="note", source="user")
         db.add(note)
+    notes_service.persist_note(db, note, links=[])  # links filled in Task 8
     db.commit()
 
     if event_uid:

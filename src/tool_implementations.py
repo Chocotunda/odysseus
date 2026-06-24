@@ -17,6 +17,7 @@ from src.constants import MAX_READ_CHARS, DEEP_RESEARCH_DIR, VAULT_FILE
 from src.tool_utils import get_mcp_manager
 from core.constants import internal_api_base
 from routes._validators import validate_remote_host, validate_ssh_port
+import src.notes_service as notes_service
 
 logger = logging.getLogger(__name__)
 
@@ -1528,6 +1529,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 session_id=args.get("session_id"),
             )
             db.add(note)
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             # Return note_id so the chat-side renderer can build a real
             # "View note" button that opens the notes modal at this id.
@@ -1576,6 +1578,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 note.pinned = args["pinned"]
             if "archived" in args:
                 note.archived = args["archived"]
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             return {"response": f"Note updated: \"{note.title or '(untitled)'}\"", "exit_code": 0}
 
@@ -1587,7 +1590,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             if not _note_visible_to_owner(note, owner):
                 return {"error": "Note not found", "exit_code": 1}
             title = note.title
-            db.delete(note)
+            notes_service.delete_note(db, note)
             db.commit()
             return {"response": f"Deleted note: \"{title or '(untitled)'}\"", "exit_code": 0}
 
@@ -1607,6 +1610,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             items[index]["done"] = not items[index].get("done", False)
             note.items = json.dumps(items)
             flag_modified(note, "items")
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             mark = "done" if items[index]["done"] else "undone"
             return {"response": f"Item '{items[index].get('text', '')}' marked {mark}", "exit_code": 0}
@@ -1799,6 +1803,7 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None) -> Dict:
             source="calendar",
         )
         db.add(note)
+        notes_service.persist_note(db, note, links=[])
         return note.id, None
 
     try:

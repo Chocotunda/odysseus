@@ -14,6 +14,7 @@ from core.middleware import INTERNAL_TOOL_USER
 from src.auth_helpers import require_user
 from src.constants import DATA_DIR
 from sqlalchemy.orm.attributes import flag_modified
+import src.notes_service as notes_service
 
 logger = logging.getLogger(__name__)
 
@@ -651,6 +652,7 @@ def setup_note_routes(task_scheduler=None):
                 sort_order=body.sort_order if body.sort_order is not None else 0,
             )
             db.add(note)
+            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
@@ -716,6 +718,7 @@ def setup_note_routes(task_scheduler=None):
             if body.agent_session_id is not None:
                 note.agent_session_id = body.agent_session_id
 
+            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
@@ -735,7 +738,7 @@ def setup_note_routes(task_scheduler=None):
             # let any user touch a row whose owner field was null/empty.
             if user is not None and note.owner != user:
                 raise HTTPException(404, "Note not found")
-            db.delete(note)
+            notes_service.delete_note(db, note)
             db.commit()
             return {"ok": True}
         finally:
@@ -755,6 +758,7 @@ def setup_note_routes(task_scheduler=None):
             if user is not None and note.owner != user:
                 raise HTTPException(404, "Note not found")
             note.pinned = not note.pinned
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             return {"ok": True, "pinned": note.pinned}
         finally:
@@ -774,6 +778,7 @@ def setup_note_routes(task_scheduler=None):
             if user is not None and note.owner != user:
                 raise HTTPException(404, "Note not found")
             note.archived = not note.archived
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             return {"ok": True, "archived": note.archived}
         finally:
@@ -800,6 +805,7 @@ def setup_note_routes(task_scheduler=None):
             items[index]["done"] = not items[index].get("done", False)
             note.items = json.dumps(items)
             flag_modified(note, "items")
+            notes_service.persist_note(db, note, links=[])
             db.commit()
             return {"ok": True, "items": items}
         finally:
@@ -895,6 +901,7 @@ def setup_note_routes(task_scheduler=None):
                 note = q.first()
                 if note:
                     note.sort_order = i
+                    notes_service.persist_note(db, note, links=[])
             db.commit()
             return {"ok": True, "count": len(ids)}
         finally:
