@@ -59,6 +59,25 @@ def _require_user(request: Request) -> str:
     return FALLBACK_OWNER
 
 
+def _scope_owner(request: Request, allowed: set) -> str:
+    """Resolve owner, honouring API-token scopes for read-capable endpoints.
+
+    Bearer-token callers must carry one of the scopes in `allowed`; any other
+    token gets 403. Cookie-session callers fall through to _require_user so
+    existing behaviour (including single-user FALLBACK_OWNER) is unchanged.
+    """
+    if getattr(request.state, "api_token", False):
+        scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+        if not scopes.intersection(allowed):
+            required = " or ".join(sorted(allowed))
+            raise HTTPException(403, f"API token missing required scope: {required}")
+        owner = getattr(request.state, "api_token_owner", None)
+        if not owner:
+            raise HTTPException(403, "API token has no owner")
+        return owner
+    return _require_user(request)
+
+
 def _get_or_404_calendar(db, cal_id: str, owner: str) -> CalendarCal:
     cal = db.query(CalendarCal).filter(CalendarCal.id == cal_id).first()
     if not cal:
@@ -941,7 +960,7 @@ def setup_calendar_routes() -> APIRouter:
 
     @router.get("/events")
     async def list_events(request: Request, start: str, end: str, calendar: str = ""):
-        owner = _require_user(request)
+        owner = _scope_owner(request, {"calendar:read", "calendar:write"})
         try:
             start_dt = _parse_dt(start)
             end_dt = _parse_dt(end)
