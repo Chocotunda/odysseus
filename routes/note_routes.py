@@ -574,7 +574,28 @@ def setup_note_routes(task_scheduler=None):
 
     router = APIRouter(prefix="/api/notes", tags=["notes"])
 
-    def _owner(request: Request) -> Optional[str]:
+    # API-token scope gates (browser/cookie sessions bypass these — they auth
+    # by cookie). Reads accept notes:read or notes:write; writes require
+    # notes:write. Mirrors planner_routes.py:TODO_READ_SCOPES pattern.
+    NOTE_READ_SCOPES = {"notes:read", "notes:write"}
+    NOTE_WRITE_SCOPES = {"notes:write"}
+
+    def _owner(request: Request, allowed: set = NOTE_READ_SCOPES) -> Optional[str]:
+        # Resolve the data owner, honoring API-token scopes (mirrors
+        # routes/planner_routes.py:_owner). Bearer-token callers must carry
+        # one of `allowed` and resolve to their token's owner; everyone else
+        # falls back to require_user (which still fails closed for stray
+        # tokens), coercing "" -> None in single-user mode so the ownership
+        # gate below behaves.
+        if getattr(request.state, "api_token", False):
+            scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+            if not scopes.intersection(allowed):
+                required = " or ".join(sorted(allowed))
+                raise HTTPException(403, f"API token missing required scope: {required}")
+            owner = getattr(request.state, "api_token_owner", None)
+            if not owner:
+                raise HTTPException(403, "API token has no owner")
+            return owner
         # require_user, not bare get_current_user: a request that reaches
         # these owner-scoped routes with NO identity (auth-middleware
         # regression, SSRF from a sibling service) must fail closed (401)
@@ -610,7 +631,7 @@ def setup_note_routes(task_scheduler=None):
         archived: Optional[bool] = None,
         label: Optional[str] = None,
     ):
-        user = _owner(request)
+        user = _owner(request, NOTE_READ_SCOPES)
         db = SessionLocal()
         try:
             q = db.query(Note).filter(Note.deleted_at.is_(None))
@@ -634,7 +655,7 @@ def setup_note_routes(task_scheduler=None):
     # --- CREATE ---
     @router.post("")
     def create_note(request: Request, body: NoteCreate):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = Note(
@@ -667,7 +688,7 @@ def setup_note_routes(task_scheduler=None):
     # the literal string "changes" as a note_id path parameter.
     @router.get("/changes")
     def notes_changes(request: Request, since: int = 0):
-        owner = _owner(request)  # Task 6 will convert to scope-aware gate
+        owner = _owner(request, NOTE_READ_SCOPES)
         db = SessionLocal()
         try:
             q = db.query(Note)
@@ -685,7 +706,7 @@ def setup_note_routes(task_scheduler=None):
     # --- GET ONE ---
     @router.get("/{note_id}")
     def get_note(request: Request, note_id: str):
-        user = _owner(request)
+        user = _owner(request, NOTE_READ_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -702,7 +723,7 @@ def setup_note_routes(task_scheduler=None):
     # --- UPDATE ---
     @router.put("/{note_id}")
     def update_note(request: Request, note_id: str, body: NoteUpdate):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -751,7 +772,7 @@ def setup_note_routes(task_scheduler=None):
     # --- DELETE ---
     @router.delete("/{note_id}")
     def delete_note(request: Request, note_id: str):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -770,7 +791,7 @@ def setup_note_routes(task_scheduler=None):
     # --- TOGGLE PIN ---
     @router.post("/{note_id}/pin")
     def toggle_pin(request: Request, note_id: str):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -790,7 +811,7 @@ def setup_note_routes(task_scheduler=None):
     # --- TOGGLE ARCHIVE ---
     @router.post("/{note_id}/archive")
     def toggle_archive(request: Request, note_id: str):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -810,7 +831,7 @@ def setup_note_routes(task_scheduler=None):
     # --- TOGGLE CHECKLIST ITEM ---
     @router.post("/{note_id}/items/{index}/toggle")
     def toggle_item(request: Request, note_id: str, index: int):
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
@@ -844,13 +865,14 @@ def setup_note_routes(task_scheduler=None):
         Returns {synthesis, email_sent}.
         """
         # Gate against anonymous callers — LLM synthesis can burn tokens.
-        user = require_user(request)
+        # _owner with NOTE_WRITE_SCOPES enforces both: requires a valid
+        # identity (cookie session or API token with notes:write).
+        caller = _owner(request, NOTE_WRITE_SCOPES)
+        user = caller  # alias; is_admin check below uses `user`
         body = await request.json()
         note_id = str(body.get("note_id") or "").strip()
         if not note_id:
             raise HTTPException(400, "note_id required")
-
-        caller = _owner(request)
         is_test = note_id.startswith("test-")
         is_admin = _is_admin_or_single_user(request, user or caller)
         _override: dict = {}
@@ -896,7 +918,7 @@ def setup_note_routes(task_scheduler=None):
     @router.post("/reorder")
     async def reorder_notes(request: Request):
         """Update sort_order for a list of note IDs in the order provided."""
-        user = _owner(request)
+        user = _owner(request, NOTE_WRITE_SCOPES)
         body = await request.json()
         ids = body.get("ids", [])
         if not isinstance(ids, list):

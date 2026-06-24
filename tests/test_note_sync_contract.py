@@ -27,6 +27,18 @@ def _req(user):
     return SimpleNamespace(state=SimpleNamespace(current_user=user, api_token=False))
 
 
+def _token_req(owner: str, scopes: list):
+    """Simulate an API-token-authed request (mirrors planner scope tests)."""
+    return SimpleNamespace(
+        state=SimpleNamespace(
+            current_user=owner,
+            api_token=True,
+            api_token_owner=owner,
+            api_token_scopes=scopes,
+        )
+    )
+
+
 def _endpoint(router, path, method):
     full = f"/api/notes{path}"
     for r in router.routes:
@@ -171,3 +183,124 @@ def test_changes_owner_scoped(monkeypatch, tmp_path):
     out = changes(_req("alice"), since=0)
     assert all(i["owner"] == "alice" for i in out["items"])
     assert len(out["items"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Scope gate tests (Task 6: API-token scope enforcement)
+# Mirror the equivalent planner/people scope tests.
+# ---------------------------------------------------------------------------
+
+def test_notes_endpoints_reject_token_without_notes_scope(monkeypatch, tmp_path):
+    """A token carrying only todos:read (no notes scope) must get 403 on GET /api/notes."""
+    import src.note_vault as note_vault
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    list_ep = _endpoint(router, "", "GET")
+
+    req = _token_req("alice", ["todos:read"])  # no notes scope
+    with pytest.raises(HTTPException) as exc_info:
+        list_ep(req)
+    assert exc_info.value.status_code == 403
+
+
+def test_notes_read_token_allows_list(monkeypatch, tmp_path):
+    """A token with notes:read satisfies GET /api/notes."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    list_ep = _endpoint(router, "", "GET")
+
+    req = _token_req("alice", ["notes:read"])
+    result = list_ep(req)
+    assert "notes" in result
+
+
+def test_notes_write_token_allows_list(monkeypatch, tmp_path):
+    """A token with notes:write also satisfies GET /api/notes (write implies read)."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    list_ep = _endpoint(router, "", "GET")
+
+    req = _token_req("alice", ["notes:write"])
+    result = list_ep(req)
+    assert "notes" in result
+
+
+def test_notes_read_token_rejects_write(monkeypatch, tmp_path):
+    """A token with only notes:read must get 403 on write endpoints (POST /api/notes)."""
+    import src.note_vault as note_vault
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create_ep = _endpoint(router, "", "POST")
+
+    req = _token_req("alice", ["notes:read"])
+    with pytest.raises(HTTPException) as exc_info:
+        create_ep(req, body=note_routes.NoteCreate(title="X"))
+    assert exc_info.value.status_code == 403
+
+
+def test_notes_write_token_allows_create(monkeypatch, tmp_path):
+    """A token with notes:write can POST /api/notes."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create_ep = _endpoint(router, "", "POST")
+
+    req = _token_req("alice", ["notes:write"])
+    result = create_ep(req, body=note_routes.NoteCreate(title="From token"))
+    assert result["title"] == "From token"
+    assert result["owner"] == "alice"
+
+
+def test_notes_changes_endpoint_rejects_token_without_scope(monkeypatch, tmp_path):
+    """GET /api/notes/changes must reject a token with no notes scope."""
+    import src.note_vault as note_vault
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    changes_ep = _endpoint(router, "/changes", "GET")
+
+    req = _token_req("alice", ["calendar:read"])
+    with pytest.raises(HTTPException) as exc_info:
+        changes_ep(req, since=0)
+    assert exc_info.value.status_code == 403
+
+
+def test_notes_tide_token_scopes_allow_list_and_create(monkeypatch, tmp_path):
+    """The tide token profile includes notes:read + notes:write — both gates pass."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    list_ep = _endpoint(router, "", "GET")
+    create_ep = _endpoint(router, "", "POST")
+
+    tide_scopes = [
+        "todos:read", "todos:write", "notes:read", "notes:write",
+        "calendar:read", "people:read",
+    ]
+    req = _token_req("alice", tide_scopes)
+    list_result = list_ep(req)
+    assert "notes" in list_result
+
+    create_result = create_ep(req, body=note_routes.NoteCreate(title="Tide note"))
+    assert create_result["title"] == "Tide note"
