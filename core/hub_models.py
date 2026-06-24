@@ -458,6 +458,75 @@ def next_area_seq(db, owner) -> int:
     return (current or 0) + 1
 
 
+def _migrate_add_note_deleted_at_column():
+    """Add `deleted_at` (soft-delete tombstone) to notes. Guarded + idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(notes)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE notes ADD COLUMN deleted_at DATETIME")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_notes_deleted_at ON notes(deleted_at)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'deleted_at' to notes")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"notes.deleted_at migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_note_seq_column():
+    """Add per-owner monotonic `seq` to notes + backfill existing rows. Guarded + idempotent."""
+    import sqlite3
+    from collections import defaultdict
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(notes)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "seq" not in columns:
+            conn.execute("ALTER TABLE notes ADD COLUMN seq INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_notes_seq ON notes(seq)")
+            # backfill: per-owner 1..N in a stable (updated_at, id) order
+            rows = conn.execute(
+                "SELECT id, owner FROM notes ORDER BY owner, updated_at, id"
+            ).fetchall()
+            counters = defaultdict(int)
+            for rid, owner in rows:
+                counters[owner] += 1
+                conn.execute("UPDATE notes SET seq = ? WHERE id = ?", (counters[owner], rid))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added + backfilled 'seq' on notes")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"notes.seq migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def next_note_seq(db, owner) -> int:
+    """Next per-owner monotonic write sequence for Note (the /notes/changes cursor).
+    Any code that writes a Note MUST set `seq = next_note_seq(db, owner)` before
+    commit, or the row/edit will never appear in the delta feed (seq > since skips NULL)."""
+    from sqlalchemy import func
+    from core.database import Note
+    current = db.query(func.max(Note.seq)).filter(Note.owner == owner).scalar()
+    return (current or 0) + 1
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
@@ -470,3 +539,5 @@ def run_hub_migrations():
     _migrate_add_person_seq_column()
     _migrate_add_area_deleted_at_column()
     _migrate_add_area_seq_column()
+    _migrate_add_note_deleted_at_column()
+    _migrate_add_note_seq_column()

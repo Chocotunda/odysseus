@@ -1636,6 +1636,8 @@ class Note(TimestampMixin, Base):
     # Chat session spawned by the note's "Agent" button (solve-this-todo).
     # The note shows a clickable tag that opens this session for review.
     agent_session_id  = Column(String, nullable=True)
+    seq        = Column(Integer, default=0, index=True)   # per-owner monotonic write sequence; the ?since= cursor
+    deleted_at = Column(DateTime, nullable=True, index=True)  # soft-delete tombstone; NULL = live
 
 
 # --- Hub graph models (PlanProject, PlanItem, Link, Person, Area) were extracted
