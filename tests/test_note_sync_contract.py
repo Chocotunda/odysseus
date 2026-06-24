@@ -304,3 +304,119 @@ def test_notes_tide_token_scopes_allow_list_and_create(monkeypatch, tmp_path):
 
     create_result = create_ep(req, body=note_routes.NoteCreate(title="Tide note"))
     assert create_result["title"] == "Tide note"
+
+
+# ---------------------------------------------------------------------------
+# Task 7: client-UUID upsert on POST + partial PATCH route
+# Mirror tests/test_planner_client_id.py and tests/test_planner_patch.py
+# ---------------------------------------------------------------------------
+
+def test_post_accepts_client_id_idempotently(monkeypatch, tmp_path):
+    """POST /api/notes with a client-supplied id twice returns the same row (no dup)."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+
+    cid = "note-client-uuid-1"
+    first = create(_req("alice"), body=note_routes.NoteCreate(id=cid, title="First"))
+    assert first["id"] == cid
+
+    second = create(_req("alice"), body=note_routes.NoteCreate(id=cid, title="Should be ignored"))
+    assert second["id"] == cid
+    # idempotent: returns existing row, title NOT overwritten
+    assert second["title"] == "First"
+
+    # confirm only one row in DB
+    db = SF()
+    try:
+        from core.database import Note
+        assert db.query(Note).filter(Note.id == cid).count() == 1
+    finally:
+        db.close()
+
+
+def test_post_client_id_cross_owner_404(monkeypatch, tmp_path):
+    """POST with a client id already owned by a different owner must 404 (no cross-owner leak)."""
+    import src.note_vault as note_vault
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+
+    cid = "note-client-uuid-cross"
+    create(_req("bob"), body=note_routes.NoteCreate(id=cid, title="Bob's note"))
+    with pytest.raises(HTTPException) as exc:
+        create(_req("alice"), body=note_routes.NoteCreate(id=cid, title="Alice steal"))
+    assert exc.value.status_code == 404
+
+
+def test_post_without_id_server_generates(monkeypatch, tmp_path):
+    """POST without a client id still generates a server UUID."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+
+    out = create(_req("alice"), body=note_routes.NoteCreate(title="no id"))
+    assert out["id"]  # server-generated uuid
+
+
+def test_patch_absent_key_is_not_null(monkeypatch, tmp_path):
+    """PATCH /api/notes/{id} with only title leaves content unchanged."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    patch = _endpoint(router, "/{note_id}", "PATCH")
+
+    n = create(_req("alice"), body=note_routes.NoteCreate(title="original", content="keep me"))
+    out = patch(_req("alice"), note_id=n["id"],
+                body=note_routes.NotePatch.model_validate({"title": "updated"}))
+    assert out["title"] == "updated"
+    assert out["content"] == "keep me"   # untouched by absent key
+
+
+def test_patch_explicit_null_clears_field(monkeypatch, tmp_path):
+    """PATCH /api/notes/{id} with explicit content:null clears it."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    patch = _endpoint(router, "/{note_id}", "PATCH")
+
+    n = create(_req("alice"), body=note_routes.NoteCreate(title="t", content="clear me"))
+    out = patch(_req("alice"), note_id=n["id"],
+                body=note_routes.NotePatch.model_validate({"content": None}))
+    assert out["content"] is None         # explicit null clears
+    assert out["title"] == "t"            # title untouched
+
+
+def test_patch_cross_owner_404(monkeypatch, tmp_path):
+    """PATCH /api/notes/{id} on a note owned by a different user must 404."""
+    import src.note_vault as note_vault
+    import pytest
+    from fastapi import HTTPException
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    patch = _endpoint(router, "/{note_id}", "PATCH")
+
+    n = create(_req("bob"), body=note_routes.NoteCreate(title="Bob's"))
+    with pytest.raises(HTTPException) as exc:
+        patch(_req("alice"), note_id=n["id"],
+              body=note_routes.NotePatch.model_validate({"title": "stolen"}))
+    assert exc.value.status_code == 404

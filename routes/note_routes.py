@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class NoteCreate(BaseModel):
+    id: Optional[str] = None       # client-supplied UUID for idempotent upsert (Task 7)
     title: str = ""
     content: Optional[str] = None
     items: Optional[list] = None
@@ -40,6 +41,28 @@ class NoteCreate(BaseModel):
 
 
 class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    items: Optional[list] = None
+    note_type: Optional[str] = None
+    color: Optional[str] = None
+    label: Optional[str] = None
+    pinned: Optional[bool] = None
+    archived: Optional[bool] = None
+    due_date: Optional[str] = None
+    image_url: Optional[str] = None
+    repeat: Optional[str] = None
+    sort_order: Optional[int] = None
+    agent_session_id: Optional[str] = None
+
+
+class NotePatch(BaseModel):
+    """Partial update model: absent key != explicit null.
+
+    Uses model_dump(exclude_unset=True) semantics — only keys present in
+    the request body are applied to the note (mirrors PlanItemPatch in
+    planner_routes.py). A key set to null explicitly clears it.
+    """
     title: Optional[str] = None
     content: Optional[str] = None
     items: Optional[list] = None
@@ -658,8 +681,16 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request, NOTE_WRITE_SCOPES)
         db = SessionLocal()
         try:
+            # Idempotent create on a client-supplied id (optimistic-create support).
+            # Mirrors planner_routes.py create_item client-id upsert (slice 1b-0).
+            if body.id:
+                existing = db.query(Note).filter(Note.id == body.id).first()
+                if existing is not None:
+                    if user is not None and existing.owner != user:
+                        raise HTTPException(404, "Note not found")  # never collide across owners
+                    return _note_to_dict(existing)                  # idempotent: return existing, no dup
             note = Note(
-                id=str(uuid.uuid4()),
+                id=body.id or str(uuid.uuid4()),
                 owner=user,
                 title=body.title,
                 content=body.content,
@@ -762,6 +793,39 @@ def setup_note_routes(task_scheduler=None):
             if body.agent_session_id is not None:
                 note.agent_session_id = body.agent_session_id
 
+            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
+            db.commit()
+            db.refresh(note)
+            return _note_to_dict(note)
+        finally:
+            db.close()
+
+    # --- PATCH (partial update; absent key != explicit null) ---
+    @router.patch("/{note_id}")
+    def patch_note(request: Request, note_id: str, body: NotePatch):
+        """Partial update: only keys present in the request body are applied.
+
+        Mirrors PlanItemPatch / model_dump(exclude_unset=True) semantics from
+        planner_routes.py (slice 8982775). A key explicitly set to null clears
+        the field; an absent key is not touched at all.
+        """
+        user = _owner(request, NOTE_WRITE_SCOPES)
+        db = SessionLocal()
+        try:
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
+            if not note:
+                raise HTTPException(404, "Note not found")
+            if user is not None and note.owner != user:
+                raise HTTPException(404, "Note not found")
+            fields = body.model_dump(exclude_unset=True)  # only keys the client sent
+            for key, value in fields.items():
+                if key == "items":
+                    # items is stored as JSON-encoded string; encode if not None
+                    note.items = json.dumps(value) if value is not None else None
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(note, "items")
+                else:
+                    setattr(note, key, value)
             notes_service.persist_note(db, note, links=[])  # links filled in Task 8
             db.commit()
             db.refresh(note)
