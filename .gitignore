@@ -105,3 +105,6 @@ _scratch/
 
 # AI session handoff — contains live credentials/account details, never commit
 docs/ai-context/HANDOFF.md
+
+# SDD scratch (briefs, reports, ledger, diffs)
+.superpowers/
