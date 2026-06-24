@@ -95,6 +95,9 @@ def _note_to_dict(note: Note) -> Dict[str, Any]:
         "agent_session_id": getattr(note, "agent_session_id", None),
         "created_at": note.created_at.isoformat() if note.created_at else None,
         "updated_at": note.updated_at.isoformat() if note.updated_at else None,
+        "seq": note.seq or 0,
+        "deleted": note.deleted_at is not None,
+        "deleted_at": note.deleted_at.isoformat() if note.deleted_at else None,
     }
 
 
@@ -656,6 +659,26 @@ def setup_note_routes(task_scheduler=None):
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
+        finally:
+            db.close()
+
+    # --- CHANGES (delta sync): rows with seq > since, incl. tombstones ---
+    # IMPORTANT: registered BEFORE /{note_id} so FastAPI does not capture
+    # the literal string "changes" as a note_id path parameter.
+    @router.get("/changes")
+    def notes_changes(request: Request, since: int = 0):
+        owner = _owner(request)  # Task 6 will convert to scope-aware gate
+        db = SessionLocal()
+        try:
+            q = db.query(Note)
+            if owner is not None:
+                q = q.filter(Note.owner == owner)
+            q = q.filter(Note.seq > since)  # exclusive; includes tombstones
+            q = q.order_by(Note.seq.asc())
+            rows = q.all()
+            items = [_note_to_dict(n) for n in rows]
+            cursor = max((n.seq for n in rows), default=since)
+            return {"items": items, "cursor": cursor}
         finally:
             db.close()
 
