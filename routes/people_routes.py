@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import SessionLocal
-from core.hub_models import Person
+from core.hub_models import Person, next_person_seq
 from src.auth_helpers import require_user
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,9 @@ def _person_to_dict(p: Person, area_id: Optional[str] = None) -> Dict[str, Any]:
         "id": p.id, "name": p.name, "email": p.email, "role": p.role,
         "contact_uid": p.contact_uid, "archived": bool(p.archived),
         "area_id": area_id,
+        "seq": p.seq,
+        "deleted": p.deleted_at is not None,
+        "deleted_at": p.deleted_at.isoformat() if p.deleted_at else None,
     }
 
 
@@ -67,6 +70,16 @@ def setup_people_routes():
             raise HTTPException(status_code=404, detail="person not found")
         return p
 
+    def _load_live(db, request: Request, person_id: str, allowed: set) -> Person:
+        """Load a Person, raising 404 for both missing and soft-deleted rows."""
+        owner = _owner(request, allowed)
+        p = (db.query(Person)
+             .filter(Person.id == person_id, Person.deleted_at.is_(None))
+             .first())
+        if not p or (owner is not None and p.owner != owner):
+            raise HTTPException(status_code=404, detail="person not found")
+        return p
+
     def _area_of(db, owner, person_id):
         from src.links import links_from, NODE_PERSON, REL_IN_AREA
         edges = links_from(db, owner, NODE_PERSON, person_id, rel=REL_IN_AREA)
@@ -87,7 +100,10 @@ def setup_people_routes():
         owner = _owner(request, PEOPLE_READ_SCOPES)
         db = SessionLocal()
         try:
-            q = db.query(Person).filter(Person.archived == False)  # noqa: E712
+            q = db.query(Person).filter(
+                Person.archived == False,          # noqa: E712
+                Person.deleted_at.is_(None),       # exclude tombstones
+            )
             if owner is not None:
                 q = q.filter(Person.owner == owner)
             rows = q.order_by(Person.name).all()
@@ -103,6 +119,7 @@ def setup_people_routes():
         try:
             p = Person(id=str(uuid.uuid4()), owner=owner, name=(body.name or "").strip(),
                        email=body.email, role=body.role, contact_uid=body.contact_uid)
+            p.seq = next_person_seq(db, owner)
             db.add(p)
             db.commit()
             from src.links import set_area, NODE_PERSON
@@ -112,11 +129,33 @@ def setup_people_routes():
         finally:
             db.close()
 
+    # --- CHANGES (delta sync): rows with seq > since, INCLUDING tombstones ---
+    # IMPORTANT: register /changes BEFORE /{person_id} so FastAPI doesn't treat
+    # "changes" as a person_id path parameter.
+    @router.get("/changes")
+    def list_changes(request: Request, since: Optional[int] = None):
+        user = _owner(request, PEOPLE_READ_SCOPES)
+        db = SessionLocal()
+        try:
+            q = db.query(Person)
+            if user is not None:
+                q = q.filter(Person.owner == user)
+            q = q.filter(Person.seq.isnot(None))    # NULL seq never appears in the feed
+            if since is not None:
+                q = q.filter(Person.seq > since)     # exclusive; seq is unique-per-owner monotonic
+            # IMPORTANT: do NOT filter deleted_at here — the client must learn deletes.
+            people = q.order_by(Person.seq.asc()).all()
+            dicts = [_person_to_dict(p) for p in people]
+            cursor = max((p.seq for p in people), default=(since or 0))
+            return {"people": dicts, "cursor": cursor}
+        finally:
+            db.close()
+
     @router.get("/{person_id}")
     def get_person(request: Request, person_id: str):
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id, PEOPLE_READ_SCOPES)
+            p = _load_live(db, request, person_id, PEOPLE_READ_SCOPES)
             return _person_to_dict(p, _area_of(db, p.owner, p.id))
         finally:
             db.close()
@@ -125,11 +164,12 @@ def setup_people_routes():
     def update_person(request: Request, person_id: str, body: PersonUpdate):
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id, PEOPLE_WRITE_SCOPES)
+            p = _load_live(db, request, person_id, PEOPLE_WRITE_SCOPES)
             for field in ("name", "email", "role", "contact_uid", "archived"):
                 val = getattr(body, field)
                 if val is not None:
                     setattr(p, field, val)
+            p.seq = next_person_seq(db, p.owner)
             db.commit()
             from src.links import set_area, NODE_PERSON
             if body.area_id is not None:
@@ -140,12 +180,15 @@ def setup_people_routes():
 
     @router.delete("/{person_id}")
     def delete_person(request: Request, person_id: str):
+        from datetime import datetime, timezone
         from src.links import remove_links_for, NODE_PERSON
         db = SessionLocal()
         try:
-            p = _load(db, request, person_id, PEOPLE_WRITE_SCOPES)
+            p = _load_live(db, request, person_id, PEOPLE_WRITE_SCOPES)
             remove_links_for(db, p.owner, NODE_PERSON, p.id)
-            db.delete(p)
+            # soft-delete: stamp tombstone + advance seq (do NOT db.delete)
+            p.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            p.seq = next_person_seq(db, p.owner)
             db.commit()
             return {"ok": True}
         finally:
@@ -160,7 +203,7 @@ def setup_people_routes():
         from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
-            person = _load(db, request, person_id, PEOPLE_READ_SCOPES)
+            person = _load_live(db, request, person_id, PEOPLE_READ_SCOPES)
             owner = person.owner
 
             task_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)

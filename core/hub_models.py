@@ -129,6 +129,8 @@ class Person(TimestampMixin, Base):
     email       = Column(String, nullable=True)
     role        = Column(String, nullable=True)
     archived    = Column(Boolean, default=False)
+    deleted_at  = Column(DateTime, nullable=True, index=True)   # soft-delete tombstone; NULL = live
+    seq         = Column(Integer, index=True)   # per-owner monotonic write sequence; the ?since= cursor
 
     __table_args__ = (Index('ix_people_owner_archived', 'owner', 'archived'),)
 
@@ -145,6 +147,8 @@ class Area(TimestampMixin, Base):
     color      = Column(String, nullable=True)   # stored hex (reuses UI palette)
     sort_order = Column(Integer, default=0)
     archived   = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True, index=True)   # soft-delete tombstone; NULL = live
+    seq        = Column(Integer, index=True)   # per-owner monotonic write sequence; the ?since= cursor
 
     __table_args__ = (Index('ix_areas_owner_archived', 'owner', 'archived'),)
 
@@ -318,6 +322,142 @@ def next_link_seq(db, owner) -> int:
     return (current or 0) + 1
 
 
+def _migrate_add_person_deleted_at_column():
+    """Add `deleted_at` (soft-delete tombstone) to people. Guarded + idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(people)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE people ADD COLUMN deleted_at DATETIME")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_people_deleted_at ON people(deleted_at)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'deleted_at' to people")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"people.deleted_at migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_person_seq_column():
+    """Add per-owner monotonic `seq` to people + backfill existing rows. Guarded + idempotent."""
+    import sqlite3
+    from collections import defaultdict
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(people)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "seq" not in columns:
+            conn.execute("ALTER TABLE people ADD COLUMN seq INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_people_seq ON people(seq)")
+            # backfill: per-owner 1..N in a stable (updated_at, id) order
+            rows = conn.execute(
+                "SELECT id, owner FROM people ORDER BY owner, updated_at, id"
+            ).fetchall()
+            counters = defaultdict(int)
+            for rid, owner in rows:
+                counters[owner] += 1
+                conn.execute("UPDATE people SET seq = ? WHERE id = ?", (counters[owner], rid))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added + backfilled 'seq' on people")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"people.seq migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def next_person_seq(db, owner) -> int:
+    """Next per-owner monotonic write sequence for Person (the /people/changes cursor).
+    Any code that writes a Person MUST set `seq = next_person_seq(db, owner)` before
+    commit, or the row/edit will never appear in the delta feed (seq > since skips NULL)."""
+    from sqlalchemy import func
+    current = db.query(func.max(Person.seq)).filter(Person.owner == owner).scalar()
+    return (current or 0) + 1
+
+
+def _migrate_add_area_deleted_at_column():
+    """Add `deleted_at` (soft-delete tombstone) to areas. Guarded + idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(areas)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE areas ADD COLUMN deleted_at DATETIME")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_areas_deleted_at ON areas(deleted_at)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'deleted_at' to areas")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"areas.deleted_at migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_area_seq_column():
+    """Add per-owner monotonic `seq` to areas + backfill existing rows. Guarded + idempotent."""
+    import sqlite3
+    from collections import defaultdict
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(areas)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "seq" not in columns:
+            conn.execute("ALTER TABLE areas ADD COLUMN seq INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_areas_seq ON areas(seq)")
+            # backfill: per-owner 1..N in a stable (updated_at, id) order
+            rows = conn.execute(
+                "SELECT id, owner FROM areas ORDER BY owner, updated_at, id"
+            ).fetchall()
+            counters = defaultdict(int)
+            for rid, owner in rows:
+                counters[owner] += 1
+                conn.execute("UPDATE areas SET seq = ? WHERE id = ?", (counters[owner], rid))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added + backfilled 'seq' on areas")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"areas.seq migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def next_area_seq(db, owner) -> int:
+    """Next per-owner monotonic write sequence for Area (the /areas/changes cursor).
+    Any code that writes an Area MUST set `seq = next_area_seq(db, owner)` before
+    commit, or the row/edit will never appear in the delta feed (seq > since skips NULL)."""
+    from sqlalchemy import func
+    current = db.query(func.max(Area.seq)).filter(Area.owner == owner).scalar()
+    return (current or 0) + 1
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
@@ -326,3 +466,7 @@ def run_hub_migrations():
     _migrate_add_plan_item_seq_column()
     _migrate_add_link_deleted_at_column()
     _migrate_add_link_seq_column()
+    _migrate_add_person_deleted_at_column()
+    _migrate_add_person_seq_column()
+    _migrate_add_area_deleted_at_column()
+    _migrate_add_area_seq_column()

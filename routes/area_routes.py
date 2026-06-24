@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.database import SessionLocal
-from core.hub_models import Area
+from core.hub_models import Area, next_area_seq
 from src.auth_helpers import require_user
 from src.areas import ensure_seeded_areas
 
@@ -31,8 +31,13 @@ class AreaUpdate(BaseModel):
 
 
 def _area_to_dict(a: Area) -> Dict[str, Any]:
-    return {"id": a.id, "name": a.name, "color": a.color,
-            "sort_order": a.sort_order, "archived": bool(a.archived)}
+    return {
+        "id": a.id, "name": a.name, "color": a.color,
+        "sort_order": a.sort_order, "archived": bool(a.archived),
+        "seq": a.seq,
+        "deleted": a.deleted_at is not None,
+        "deleted_at": a.deleted_at.isoformat() if a.deleted_at else None,
+    }
 
 
 def setup_area_routes():
@@ -57,13 +62,26 @@ def setup_area_routes():
             raise HTTPException(status_code=404, detail="area not found")
         return a
 
+    def _load_live(db, request: Request, area_id: str, allowed: set) -> Area:
+        """Load an Area, raising 404 for both missing and soft-deleted rows."""
+        owner = _owner(request, allowed)
+        a = (db.query(Area)
+             .filter(Area.id == area_id, Area.deleted_at.is_(None))
+             .first())
+        if not a or (owner is not None and a.owner != owner):
+            raise HTTPException(status_code=404, detail="area not found")
+        return a
+
     @router.get("")
     def list_areas(request: Request):
         owner = _owner(request, AREA_READ_SCOPES)
         db = SessionLocal()
         try:
             ensure_seeded_areas(db, owner)
-            q = db.query(Area).filter(Area.archived == False)  # noqa: E712
+            q = db.query(Area).filter(
+                Area.archived == False,        # noqa: E712
+                Area.deleted_at.is_(None),     # exclude tombstones
+            )
             if owner is not None:
                 q = q.filter(Area.owner == owner)
             rows = q.order_by(Area.sort_order, Area.name).all()
@@ -78,9 +96,30 @@ def setup_area_routes():
         try:
             a = Area(id=str(uuid.uuid4()), owner=owner,
                      name=(body.name or "").strip(), color=body.color)
+            a.seq = next_area_seq(db, owner)
             db.add(a)
             db.commit()
             return _area_to_dict(a)
+        finally:
+            db.close()
+
+    # --- CHANGES (delta sync): rows with seq > since, INCLUDING tombstones ---
+    @router.get("/changes")
+    def list_changes(request: Request, since: Optional[int] = None):
+        user = _owner(request, AREA_READ_SCOPES)
+        db = SessionLocal()
+        try:
+            q = db.query(Area)
+            if user is not None:
+                q = q.filter(Area.owner == user)
+            q = q.filter(Area.seq.isnot(None))    # NULL seq never appears in the feed
+            if since is not None:
+                q = q.filter(Area.seq > since)     # exclusive; seq is unique-per-owner monotonic
+            # IMPORTANT: do NOT filter deleted_at here — the client must learn deletes.
+            areas = q.order_by(Area.seq.asc()).all()
+            dicts = [_area_to_dict(a) for a in areas]
+            cursor = max((a.seq for a in areas), default=(since or 0))
+            return {"areas": dicts, "cursor": cursor}
         finally:
             db.close()
 
@@ -88,7 +127,7 @@ def setup_area_routes():
     def get_area(request: Request, area_id: str):
         db = SessionLocal()
         try:
-            return _area_to_dict(_load(db, request, area_id, AREA_READ_SCOPES))
+            return _area_to_dict(_load_live(db, request, area_id, AREA_READ_SCOPES))
         finally:
             db.close()
 
@@ -96,11 +135,12 @@ def setup_area_routes():
     def update_area(request: Request, area_id: str, body: AreaUpdate):
         db = SessionLocal()
         try:
-            a = _load(db, request, area_id, AREA_WRITE_SCOPES)
+            a = _load_live(db, request, area_id, AREA_WRITE_SCOPES)
             for field in ("name", "color", "sort_order", "archived"):
                 val = getattr(body, field)
                 if val is not None:
                     setattr(a, field, val)
+            a.seq = next_area_seq(db, a.owner)
             db.commit()
             return _area_to_dict(a)
         finally:
@@ -108,12 +148,15 @@ def setup_area_routes():
 
     @router.delete("/{area_id}")
     def delete_area(request: Request, area_id: str):
+        from datetime import datetime, timezone
         from src.links import remove_links_for, NODE_AREA
         db = SessionLocal()
         try:
-            a = _load(db, request, area_id, AREA_WRITE_SCOPES)
+            a = _load_live(db, request, area_id, AREA_WRITE_SCOPES)
             remove_links_for(db, a.owner, NODE_AREA, a.id)
-            db.delete(a)
+            # soft-delete: stamp tombstone + advance seq (do NOT db.delete)
+            a.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            a.seq = next_area_seq(db, a.owner)
             db.commit()
             return {"ok": True}
         finally:
@@ -128,14 +171,17 @@ def setup_area_routes():
         from src.hub_calendar import events_by_uids
         db = SessionLocal()
         try:
-            area = _load(db, request, area_id, AREA_READ_SCOPES)
+            area = _load_live(db, request, area_id, AREA_READ_SCOPES)
             owner = area.owner
             by_type: Dict[str, list] = {}
             for e in links_to(db, owner, NODE_AREA, area_id, rel=REL_IN_AREA):
                 by_type.setdefault(e.from_type, []).append(e.from_id)
 
             pids = by_type.get(NODE_PERSON, [])
-            people = db.query(Person).filter(Person.id.in_(pids)).all() if pids else []
+            # exclude tombstoned people from area page
+            people = (db.query(Person)
+                      .filter(Person.id.in_(pids), Person.deleted_at.is_(None))
+                      .all()) if pids else []
 
             tids = by_type.get(NODE_TASK, [])
             tasks = (db.query(PlanItem)
