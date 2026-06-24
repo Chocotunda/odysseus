@@ -1530,7 +1530,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 session_id=args.get("session_id"),
             )
             db.add(note)
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             # Return note_id so the chat-side renderer can build a real
             # "View note" button that opens the notes modal at this id.
@@ -1579,7 +1579,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 note.pinned = args["pinned"]
             if "archived" in args:
                 note.archived = args["archived"]
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             return {"response": f"Note updated: \"{note.title or '(untitled)'}\"", "exit_code": 0}
 
@@ -1611,7 +1611,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             items[index]["done"] = not items[index].get("done", False)
             note.items = json.dumps(items)
             flag_modified(note, "items")
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             mark = "done" if items[index]["done"] else "undone"
             return {"response": f"Item '{items[index].get('text', '')}' marked {mark}", "exit_code": 0}

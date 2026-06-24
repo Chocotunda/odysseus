@@ -275,3 +275,71 @@ def test_backfill_vault_writes_missing_files(tmp_path, monkeypatch):
         assert expected.exists(), "Vault file should exist after backfill"
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Test 8: regression — metadata-only persist_note must NOT wipe frontmatter links
+# ---------------------------------------------------------------------------
+
+def test_persist_note_metadata_edit_preserves_frontmatter_links(tmp_path, monkeypatch):
+    """A metadata-only call to persist_note (no links arg) must NOT wipe the
+    vault frontmatter ``links:`` block that was written during note creation.
+
+    Regression for the bug where writers such as pin/archive/toggle-item passed
+    ``links=[]`` explicitly, wiping the frontmatter links even though the body
+    still contained wikilinks and the DB Link rows were intact.
+
+    This test would FAIL if those writers still passed ``links=[]``.
+    """
+    import src.note_vault as note_vault
+    import src.notes_service as notes_service
+    from core.hub_models import run_hub_migrations
+
+    vault_dir = tmp_path / "vault"
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(vault_dir))
+    init_db()
+    run_hub_migrations()
+
+    db = SessionLocal()
+    try:
+        owner = "reg-" + _uid()[:8]
+
+        # Seed an Area so the wikilink resolves
+        area = _area(db, owner, "MyProject")
+        db.commit()
+
+        # Create the note with a wikilink in the body
+        note = Note(
+            id=_uid(),
+            owner=owner,
+            title="Regression Note",
+            content="Working on [[Area/MyProject]] this week.",
+            note_type="note",
+            source="user",
+        )
+        db.add(note)
+        # persist_note with default links=None: resolves body links and writes vault
+        notes_service.persist_note(db, note)
+        db.commit()
+
+        # Confirm the vault file was written and contains the link
+        vault_path = note_vault.vault_path_for(note)
+        assert vault_path.exists(), "Vault file should exist after initial persist"
+        initial_text = vault_path.read_text()
+        assert "[[Area/MyProject]]" in initial_text, (
+            f"Initial vault should contain wikilink; got:\n{initial_text}"
+        )
+
+        # Simulate a metadata-only edit (pin) without passing links arg
+        note.pinned = True
+        notes_service.persist_note(db, note)  # must NOT pass links=[]
+        db.commit()
+
+        # The vault frontmatter links must NOT be wiped
+        after_text = vault_path.read_text()
+        assert "[[Area/MyProject]]" in after_text, (
+            "Metadata-only persist_note wiped frontmatter links — regression!\n"
+            f"Vault after pinned=True:\n{after_text}"
+        )
+    finally:
+        db.close()

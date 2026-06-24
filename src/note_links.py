@@ -206,18 +206,14 @@ def _resolve(db, note) -> List[str]:
 def remove_stale_meeting_note_links(db, note) -> None:
     """Remove stale hub edges for a meeting-note being re-saved.
 
-    Meeting notes carry edges created by ``save_meeting_note`` (note_of, about,
-    attended_by, in_area).  On re-save the caller rebuilds them, so any old edges
-    from a previous save must be tombstoned first or changing the linked
-    person/meeting will leave orphaned edges.
+    Tombstones all live Link rows where ``from_type=note`` and
+    ``from_id=note.id`` so the caller (``save_meeting_note``) can re-add the
+    correct note_of, about, and in_area edges without leaving orphaned rows.
 
-    Only removes edges where the NOTE is the ``from`` side (note_of, about,
-    in_area) or the MEETING is the ``from`` side with attended_by pointing at
-    the same person as before — specifically, we remove all live edges FROM
-    this note so the caller can re-add the correct ones.
-
-    Does NOT remove ``from_note`` edges on PlanItems (those belong to the tasks,
-    not the note).
+    Does NOT touch ``attended_by`` edges — those are stored with
+    ``from_type=meeting`` (not note) and are managed separately by the meeting
+    writer.  Does NOT remove ``from_note`` edges on PlanItems (those belong to
+    the tasks, not the note).
     """
     from src.links import NODE_NOTE, NODE_MEETING, REL_ATTENDED_BY
     try:

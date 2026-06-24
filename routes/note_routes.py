@@ -885,7 +885,7 @@ def setup_note_routes(task_scheduler=None):
             if user is not None and note.owner != user:
                 raise HTTPException(404, "Note not found")
             note.pinned = not note.pinned
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             return {"ok": True, "pinned": note.pinned}
         finally:
@@ -905,7 +905,7 @@ def setup_note_routes(task_scheduler=None):
             if user is not None and note.owner != user:
                 raise HTTPException(404, "Note not found")
             note.archived = not note.archived
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             return {"ok": True, "archived": note.archived}
         finally:
@@ -932,7 +932,7 @@ def setup_note_routes(task_scheduler=None):
             items[index]["done"] = not items[index].get("done", False)
             note.items = json.dumps(items)
             flag_modified(note, "items")
-            notes_service.persist_note(db, note, links=[])
+            notes_service.persist_note(db, note)
             db.commit()
             return {"ok": True, "items": items}
         finally:
@@ -1029,7 +1029,7 @@ def setup_note_routes(task_scheduler=None):
                 note = q.first()
                 if note:
                     note.sort_order = i
-                    notes_service.persist_note(db, note, links=[])
+                    notes_service.persist_note(db, note)
             db.commit()
             return {"ok": True, "count": len(ids)}
         finally:
