@@ -12,11 +12,27 @@ import src.note_vault as note_vault
 
 def persist_note(db, note, *, links: Optional[List[str]] = None):
     """Assign seq + write the vault file. Caller is responsible for db.commit().
-    `links` is the note's outbound ["[[Type/Name]]"] list (Task 8); [] until then."""
+
+    ``links`` controls wikilink resolution:
+      - None (default): auto-resolve [[Type/Name]] from the note body via
+        ``src.note_links.resolve_body_links`` and write the resolved list to
+        the vault frontmatter.
+      - []: skip resolution entirely (for tests or callers that have already
+        handled link wiring externally).
+      - [...]: use the supplied list verbatim (frontmatter only, no DB upserts).
+    """
     note.seq = hub_models.next_note_seq(db, note.owner)
     db.flush()  # ensure updated_at/created_at populated for the vault frontmatter
+
+    if links is None:
+        try:
+            import src.note_links as note_links
+            links = note_links.resolve_body_links(db, note)
+        except Exception:
+            links = []  # resolution failure must never break the API write
+
     try:
-        note_vault.write_note(note, links=links or [])
+        note_vault.write_note(note, links=links)
     except Exception:
         pass  # vault projection must never break the API write
     return note

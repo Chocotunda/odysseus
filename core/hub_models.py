@@ -527,6 +527,29 @@ def next_note_seq(db, owner) -> int:
     return (current or 0) + 1
 
 
+def _backfill_vault_for_all_owners():
+    """One-time idempotent pass: write vault .md files for any live Note that
+    lacks one. Runs after all column migrations so seq/deleted_at are present.
+    Never fails startup."""
+    try:
+        from core.database import SessionLocal, Note
+        import src.note_links as note_links
+        db = SessionLocal()
+        try:
+            owners = [r[0] for r in db.query(Note.owner).filter(
+                Note.deleted_at.is_(None)).distinct().all()]
+            total = 0
+            for owner in owners:
+                total += note_links.backfill_vault_for_owner(db, owner)
+            if total:
+                logging.getLogger(__name__).info(
+                    "run_hub_migrations: vault backfill wrote %d .md files", total)
+        finally:
+            db.close()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("vault backfill failed (non-fatal): %s", exc)
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
@@ -541,3 +564,4 @@ def run_hub_migrations():
     _migrate_add_area_seq_column()
     _migrate_add_note_deleted_at_column()
     _migrate_add_note_seq_column()
+    _backfill_vault_for_all_owners()

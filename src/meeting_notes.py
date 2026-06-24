@@ -16,6 +16,7 @@ from core.database import Note, SessionLocal
 from core.hub_models import PlanItem, next_plan_item_seq
 from src import links as L
 import src.notes_service as notes_service
+import src.note_links as note_links
 
 logger = logging.getLogger(__name__)
 
@@ -101,16 +102,16 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
         note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
         if not note or (owner is not None and note.owner != owner):
             raise ValueError("note not found")
-        # TODO(next-slice): when note editing ships, clean stale note_of/about/attended_by
-        # edges here (remove_links_for the note) before re-adding, or changing the linked
-        # person/meeting on re-save will orphan the old edges.
+        # Clean stale note-origin edges (note_of/about/in_area) before re-adding,
+        # so changing the linked person/meeting on re-save doesn't orphan old edges.
+        note_links.remove_stale_meeting_note_links(db, note)
         note.title, note.content = title, content
         note.items = json.dumps(action_items)
     else:
         note = Note(id=str(uuid.uuid4()), owner=owner, title=title, content=content,
                     items=json.dumps(action_items), note_type="note", source="user")
         db.add(note)
-    notes_service.persist_note(db, note, links=[])  # links filled in Task 8
+    notes_service.persist_note(db, note)
     db.commit()
 
     if event_uid:

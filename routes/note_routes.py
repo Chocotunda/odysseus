@@ -705,7 +705,7 @@ def setup_note_routes(task_scheduler=None):
                     existing.image_url = body.image_url
                     existing.repeat = body.repeat or "none"
                     existing.sort_order = body.sort_order if body.sort_order is not None else 0
-                    notes_service.persist_note(db, existing, links=[])
+                    notes_service.persist_note(db, existing)
                     db.commit()
                     db.refresh(existing)
                     return _note_to_dict(existing)
@@ -727,7 +727,7 @@ def setup_note_routes(task_scheduler=None):
                 sort_order=body.sort_order if body.sort_order is not None else 0,
             )
             db.add(note)
-            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
+            notes_service.persist_note(db, note)
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
@@ -813,7 +813,7 @@ def setup_note_routes(task_scheduler=None):
             if body.agent_session_id is not None:
                 note.agent_session_id = body.agent_session_id
 
-            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
+            notes_service.persist_note(db, note)
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
@@ -845,7 +845,7 @@ def setup_note_routes(task_scheduler=None):
                     flag_modified(note, "items")
                 else:
                     setattr(note, key, value)
-            notes_service.persist_note(db, note, links=[])  # links filled in Task 8
+            notes_service.persist_note(db, note)
             db.commit()
             db.refresh(note)
             return _note_to_dict(note)
