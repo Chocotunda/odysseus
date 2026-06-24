@@ -60,7 +60,7 @@ def _serialize(n: "Note") -> dict:
 def cmd_list(args):
     db = SessionLocal()
     try:
-        q = db.query(Note)
+        q = db.query(Note).filter(Note.deleted_at.is_(None))
         if not args.archived:
             q = q.filter(Note.archived == False)  # noqa: E712
         if args.label:
@@ -76,7 +76,7 @@ def cmd_list(args):
 def cmd_show(args):
     db = SessionLocal()
     try:
-        n = db.get(Note, args.id)
+        n = db.query(Note).filter(Note.id == args.id, Note.deleted_at.is_(None)).first()
         if not n:
             fail(f"no note with id {args.id!r}")
         emit(_serialize(n), args)
@@ -89,6 +89,7 @@ def cmd_search(args):
     try:
         like = f"%{args.query}%"
         rows = db.query(Note).filter(
+            Note.deleted_at.is_(None),
             (Note.title.ilike(like)) | (Note.content.ilike(like))
         ).order_by(Note.updated_at.desc()).limit(args.limit).all()
         emit([_serialize(n) for n in rows], args)
