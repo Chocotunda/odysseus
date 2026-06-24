@@ -688,7 +688,27 @@ def setup_note_routes(task_scheduler=None):
                 if existing is not None:
                     if user is not None and existing.owner != user:
                         raise HTTPException(404, "Note not found")  # never collide across owners
-                    return _note_to_dict(existing)                  # idempotent: return existing, no dup
+                    if existing.deleted_at is None:
+                        return _note_to_dict(existing)              # idempotent: return existing, no dup
+                    # Revive: tombstoned row with same owner — clear deleted_at and re-apply body fields
+                    existing.deleted_at = None
+                    existing.title = body.title
+                    existing.content = body.content
+                    existing.items = json.dumps(body.items) if body.items is not None else None
+                    existing.note_type = body.note_type
+                    existing.color = body.color
+                    existing.label = body.label
+                    existing.pinned = body.pinned
+                    existing.due_date = body.due_date
+                    existing.source = body.source
+                    existing.session_id = body.session_id
+                    existing.image_url = body.image_url
+                    existing.repeat = body.repeat or "none"
+                    existing.sort_order = body.sort_order if body.sort_order is not None else 0
+                    notes_service.persist_note(db, existing, links=[])
+                    db.commit()
+                    db.refresh(existing)
+                    return _note_to_dict(existing)
             note = Note(
                 id=body.id or str(uuid.uuid4()),
                 owner=user,
@@ -822,7 +842,6 @@ def setup_note_routes(task_scheduler=None):
                 if key == "items":
                     # items is stored as JSON-encoded string; encode if not None
                     note.items = json.dumps(value) if value is not None else None
-                    from sqlalchemy.orm.attributes import flag_modified
                     flag_modified(note, "items")
                 else:
                     setattr(note, key, value)

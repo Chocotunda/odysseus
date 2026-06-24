@@ -420,3 +420,55 @@ def test_patch_cross_owner_404(monkeypatch, tmp_path):
         patch(_req("alice"), note_id=n["id"],
               body=note_routes.NotePatch.model_validate({"title": "stolen"}))
     assert exc.value.status_code == 404
+
+
+def test_post_revives_soft_deleted_note(monkeypatch, tmp_path):
+    """Re-POSTing a client id that was soft-deleted must revive it (not return tombstone).
+
+    Scenario:
+        1. Create note id=X  → live
+        2. DELETE  id=X      → tombstoned (deleted_at set)
+        3. POST    id=X again → must come back as deleted=False with new body
+
+    Only one DB row must exist (revived in-place, no duplicate).
+    """
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    delete = _endpoint(router, "/{note_id}", "DELETE")
+
+    cid = "note-revive-test-1"
+    # 1. Create
+    first = create(_req("alice"), body=note_routes.NoteCreate(id=cid, title="Original", content="v1"))
+    assert first["id"] == cid
+    assert first["deleted"] is False
+
+    # 2. Soft-delete
+    delete(_req("alice"), note_id=cid)
+
+    # Confirm tombstoned
+    db = SF()
+    try:
+        from core.database import Note
+        row = db.query(Note).filter(Note.id == cid).first()
+        assert row is not None and row.deleted_at is not None
+    finally:
+        db.close()
+
+    # 3. Re-POST same id with new body
+    revived = create(_req("alice"), body=note_routes.NoteCreate(id=cid, title="Revived", content="v2"))
+    assert revived["id"] == cid
+    assert revived["deleted"] is False
+    assert revived["deleted_at"] is None
+    assert revived["title"] == "Revived"
+    assert revived["content"] == "v2"
+
+    # Only one row in DB (revived in-place, no duplicate)
+    db = SF()
+    try:
+        assert db.query(Note).filter(Note.id == cid).count() == 1
+    finally:
+        db.close()
