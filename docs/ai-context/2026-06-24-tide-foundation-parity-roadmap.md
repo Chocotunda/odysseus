@@ -1,7 +1,7 @@
 # Tide Foundation-Parity Roadmap — bring Tide to the Odysseus custom-workspace foundation (ready for Notes)
 
 **Date:** 2026-06-24
-**Status:** Program plan, approved (user `/goal`). Executing slice-by-slice via spec→plan→subagent-TDD→**real on-device + live-backend testing**.
+**Status:** ✅ **COMPLETE (2026-06-24).** All 9 slices shipped + merged + **live-verified against the real brain on :7860**. Tide is at foundation parity — the connected graph (People/Areas/Links), calendar visibility, task detail/edit, the /today planner, and the meeting-notes composer all work; the **5-rel spine integration test passes live**; the Notes-ready slot is in place. Ready to start Notes. Executed slice-by-slice via spec→subagent-TDD→review→**real live-backend testing**. See the "Completion" section at the bottom.
 **Source:** research workflow `wf_26eb243c-f04` (4 inventory readers + architect synthesis).
 **Spans:** `~/Projects/odysseus` (brain/contract) + `~/Projects/tide` (client).
 
@@ -52,3 +52,28 @@ Tide stops being a tasks-only client and becomes a thin online-first window onto
 
 ## Definition of done (parity checklist)
 Link graph mirrored on-device + generic multi-entity sync; Odysseus seq+tombstone `/changes` for Person/Area/Link; Link soft-delete correct (revive on re-add); Area sync live (seeded areas appear; local seeding removed) + Area dashboards; People sync + Person detail via reverse-Link; task detail/edit (all fields incl. in_progress/cancelled) + linked context; calendar visible (month + event detail); Today assembled from synced model; meeting-notes composer round-trips all 5 rels; nav in both roots; a Notes-shaped slot exists so `Note` drops in next with no spine rework.
+
+---
+
+## Completion (2026-06-24) — all 9 slices shipped + live-verified
+
+**Final state:** odysseus `dev @ 226f26c` (+ 0039fd9/740e43d/f9a7623/126c0fa earlier), tide `master @ 94896b5`. Brain run locally on :7860 (pollers off) for every live test. Each slice: spec → subagent-TDD implement → adversarial review → fix wave → **real live test** (gated Swift smokes against :7860 + direct API checks) → ff-merge + push.
+
+- **0** multi-entity sync engine (tide `cab825a`) — per-entity cursors + entity-discriminated outbox + resource-param client + `EntitySync` descriptor registry; tasks round-trip preserved (live).
+- **1** Link soft-delete + `/links/changes` (odysseus `740e43d`) — seq+tombstone on Link; row-enum soft-delete + **revive-on-readd** (uq_links_edge trap); revive verified live.
+- **2** Person+Area delta contract (odysseus `f9a7623`) — seq+tombstone+`/changes`; `ensure_seeded_areas` stamps seq; seeded areas backfilled (live).
+- **3** TideLink + Area sync + Area dashboard (tide `7fca7e7`) — graph mirror + reverse-Link helpers; `eraseDatabaseOnSchemaChange` removed; live pull verified.
+- **4** People sync + list/detail (tide `8b65b3b`) — Person pages aggregate via reverse-Link (about); live pull verified.
+- **5** Calendar visibility (odysseus `226f26c` + tide `23ef4c2`) — `calendar:read` scope + scope-aware GET /events; Tide windowed in-memory month view (off the seq lane); naive-local window fix; live fetch of ~150 real events verified.
+- **6** Task detail/edit + linked context (tide `bfd9c67`) — `TaskStatus` enum (`completed` computed; additive v7); 4 FK fields mapped; **in_progress/cancelled round-trip verified live**; first real task editor.
+- **7** Today day-planner (tide `d640c19`) — client-side `TodayAssembler` (overdue/meetings/scheduled/unscheduled + capacity + area chips) reusing the Agenda; drag-to-time-block via outbox; cancelled-task exclusion fixed.
+- **8** Meeting-notes composer (odysseus `126c0fa` + tide `94896b5`) — `notes:read/write` scope-aware; minimal `TideNote` (id/title/content); `MeetingNoteClient`; macOS composer; **the gated 5-rel spine live test PASSES** (note_of/about/attended_by/in_area/from_note all created). The Notes-ready seam.
+
+**Cross-cutting verified:** the polymorphic Link spine round-trips end-to-end; per-entity sync cursors; echo avoidance per entity; soft-delete tombstones everywhere; nav in both roots (macOS sidebar + iOS tabs).
+
+**Follow-ups (for the Notes program / iOS polish — NONE block the foundation):**
+- **iOS meeting-notes composer** — macOS-only this slice (the spine proof is on macOS).
+- **Note sync feed** — `TideNote` is written from the save response only; a `/api/notes/changes` delta feed (+ a Note entity descriptor) lands with the Notes program.
+- **Note detail/editor + the `.md` vault** — the next program (this foundation deliberately leaves the slot).
+- Server: clean stale `note_of`/`about`/`attended_by` edges on meeting-note re-save (`src/meeting_notes.py` TODO).
+- Minors logged in the per-slice `.superpowers/sdd/*-report.md` (gitignored): ViewModel tests for the composer, two-button save, etc.
