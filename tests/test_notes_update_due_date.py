@@ -39,6 +39,11 @@ def _install_fakes(monkeypatch, note, parse=None):
         def first(self):
             return note
 
+        def scalar(self):
+            # persist_note → next_note_seq does func.max(...).scalar()
+            # Return 0 so next_note_seq computes (0 or 0)+1 = 1.
+            return 0
+
     class FakeDB:
         def query(self, *a, **k):
             return FakeQuery()
@@ -47,6 +52,10 @@ def _install_fakes(monkeypatch, note, parse=None):
             pass
 
         def commit(self):
+            pass
+
+        def flush(self):
+            # persist_note calls db.flush() before reading the seq.
             pass
 
         def close(self):
