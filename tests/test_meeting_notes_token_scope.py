@@ -28,6 +28,7 @@ class _Column:
     def __eq__(self, v):    return True
     def in_(self, v):       return True
     def ilike(self, v):     return True
+    def is_(self, v):       return True
     def desc(self):         return self
     def asc(self):          return self
 
@@ -44,8 +45,9 @@ class _CalendarEvent:
 
 
 class _Note:
-    id    = _Column("Note.id")
-    owner = _Column("Note.owner")
+    id         = _Column("Note.id")
+    owner      = _Column("Note.owner")
+    deleted_at = _Column("Note.deleted_at")
 
 
 class _FakeQuery:

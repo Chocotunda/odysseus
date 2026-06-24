@@ -18,6 +18,10 @@ class _Query:
     def first(self):
         return self.note
 
+    def scalar(self):
+        # persist_note -> next_note_seq calls func.max(...).scalar()
+        return 0
+
 
 class _Db:
     def __init__(self, note):
@@ -30,6 +34,10 @@ class _Db:
 
     def delete(self, note):
         self.deleted.append(note)
+
+    def flush(self):
+        # persist_note calls db.flush() before reading the seq.
+        pass
 
     def commit(self):
         self.commits += 1
