@@ -70,7 +70,7 @@ def setup_today_routes() -> APIRouter:
             people: List[Dict[str, Any]] = []
             for e in L.links_from(db, owner, L.NODE_TASK, t.id, rel=L.REL_ABOUT):
                 if e.to_type == L.NODE_PERSON:
-                    p = db.query(Person).filter(Person.id == e.to_id).first()
+                    p = db.query(Person).filter(Person.id == e.to_id, Person.deleted_at.is_(None)).first()
                     if p:
                         people.append({"id": p.id, "name": p.name, "role": p.role})
             source_note = None
@@ -81,7 +81,7 @@ def setup_today_routes() -> APIRouter:
                     break
             area = None
             for e in L.links_from(db, owner, L.NODE_TASK, t.id, rel=L.REL_IN_AREA):
-                a = db.query(Area).filter(Area.id == e.to_id).first()
+                a = db.query(Area).filter(Area.id == e.to_id, Area.deleted_at.is_(None)).first()
                 if a:
                     area = {"id": a.id, "name": a.name, "color": a.color}
                     break

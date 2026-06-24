@@ -113,7 +113,7 @@ def _attach_areas(db, owner, task_dicts, meeting_dicts):
              .all())
     area_of = {(e.from_type, e.from_id): e.to_id for e in edges}
     aids = set(area_of.values())
-    areas = {a.id: a for a in db.query(Area).filter(Area.id.in_(aids)).all()} if aids else {}
+    areas = {a.id: a for a in db.query(Area).filter(Area.id.in_(aids), Area.deleted_at.is_(None)).all()} if aids else {}
 
     def _stamp(d, node_type, node_id):
         aid = area_of.get((node_type, node_id))

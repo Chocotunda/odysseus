@@ -143,7 +143,7 @@ async def enrich_meeting_note(note_id: str, owner: Optional[str]) -> None:
         person_name = ""
         for e in L.links_from(db, owner, L.NODE_NOTE, note_id, rel=L.REL_ABOUT):
             from core.hub_models import Person
-            p = db.query(Person).filter(Person.id == e.to_id).first()
+            p = db.query(Person).filter(Person.id == e.to_id, Person.deleted_at.is_(None)).first()
             if p:
                 person_name = p.name
                 break
