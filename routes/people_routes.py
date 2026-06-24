@@ -220,12 +220,12 @@ def setup_people_routes():
             note_title_map: Dict[str, str] = {}
             if source_note_ids:
                 note_rows = (db.query(Note.id, Note.title)
-                             .filter(Note.id.in_(source_note_ids)).all())
+                             .filter(Note.id.in_(source_note_ids), Note.deleted_at.is_(None)).all())
                 note_title_map = {row.id: row.title for row in note_rows}
 
             note_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ABOUT)
                         if e.from_type == NODE_NOTE]
-            notes = db.query(Note).filter(Note.id.in_(note_ids)).all() if note_ids else []
+            notes = db.query(Note).filter(Note.id.in_(note_ids), Note.deleted_at.is_(None)).all() if note_ids else []
 
             mtg_ids = [e.from_id for e in links_to(db, owner, NODE_PERSON, person_id, rel=REL_ATTENDED_BY)
                        if e.from_type == NODE_MEETING]

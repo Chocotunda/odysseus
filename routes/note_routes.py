@@ -610,7 +610,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            q = db.query(Note)
+            q = db.query(Note).filter(Note.deleted_at.is_(None))
             if user is not None:
                 q = q.filter(Note.owner == user)
             if archived is not None:
@@ -665,7 +665,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -682,7 +682,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -731,7 +731,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -750,7 +750,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -770,7 +770,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -790,7 +790,7 @@ def setup_note_routes(task_scheduler=None):
         user = _owner(request)
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note:
                 raise HTTPException(404, "Note not found")
             # SECURITY: strict ownership — previously `note.owner and note.owner != user`
@@ -853,7 +853,7 @@ def setup_note_routes(task_scheduler=None):
         else:
             db = SessionLocal()
             try:
-                note = db.query(Note).filter(Note.id == note_id).first()
+                note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
                 if not note:
                     raise HTTPException(404, "Note not found")
                 if caller is not None and note.owner != caller:
@@ -892,7 +892,7 @@ def setup_note_routes(task_scheduler=None):
         db = SessionLocal()
         try:
             for i, nid in enumerate(ids):
-                q = db.query(Note).filter(Note.id == nid)
+                q = db.query(Note).filter(Note.id == nid, Note.deleted_at.is_(None))
                 if user is not None:
                     if _allow_null:
                         q = q.filter((Note.owner == user) | (Note.owner == None))  # noqa: E711

@@ -1422,14 +1422,14 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
     def _note_by_prefix(note_id: str):
         if not note_id:
             return None
-        q = db.query(Note).filter(Note.id.startswith(note_id))
+        q = db.query(Note).filter(Note.id.startswith(note_id), Note.deleted_at.is_(None))
         if owner:
             q = q.filter(Note.owner == owner)
         return q.first()
 
     try:
         if action == "list":
-            q = db.query(Note)
+            q = db.query(Note).filter(Note.deleted_at.is_(None))
             if owner is not None:
                 q = q.filter(Note.owner == owner)
             if args.get("label"):
@@ -1502,6 +1502,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 existing_q = db.query(Note).filter(
                     Note.archived == False,  # noqa: E712
                     Note.due_date == due_iso,
+                    Note.deleted_at.is_(None),
                 )
                 if owner is not None:
                     existing_q = existing_q.filter(Note.owner == owner)
@@ -1784,6 +1785,7 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None) -> Dict:
         existing_q = db.query(Note).filter(
             Note.archived == False,  # noqa: E712
             Note.due_date == due_date,
+            Note.deleted_at.is_(None),
         )
         if owner is not None:
             existing_q = existing_q.filter(Note.owner == owner)

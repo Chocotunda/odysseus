@@ -75,7 +75,7 @@ def setup_today_routes() -> APIRouter:
                         people.append({"id": p.id, "name": p.name, "role": p.role})
             source_note = None
             for e in L.links_from(db, owner, L.NODE_TASK, t.id, rel=L.REL_FROM_NOTE):
-                n = db.query(Note).filter(Note.id == e.to_id).first()
+                n = db.query(Note).filter(Note.id == e.to_id, Note.deleted_at.is_(None)).first()
                 if n:
                     source_note = {"id": n.id, "title": n.title}
                     break

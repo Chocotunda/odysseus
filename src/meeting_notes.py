@@ -98,7 +98,7 @@ def save_meeting_note(db, owner: Optional[str], *, title: str = "", content: str
                       area_id: Optional[str] = None) -> Dict[str, Any]:
     action_items = action_items or []
     if note_id:
-        note = db.query(Note).filter(Note.id == note_id).first()
+        note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
         if not note or (owner is not None and note.owner != owner):
             raise ValueError("note not found")
         # TODO(next-slice): when note editing ships, clean stale note_of/about/attended_by
@@ -139,7 +139,7 @@ async def enrich_meeting_note(note_id: str, owner: Optional[str]) -> None:
     from datetime import datetime
     db = SessionLocal()
     try:
-        note = db.query(Note).filter(Note.id == note_id).first()
+        note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
         if not note or (owner is not None and note.owner != owner):
             return
         person_name = ""

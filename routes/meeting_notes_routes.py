@@ -90,7 +90,7 @@ def setup_meeting_notes_routes():
         owner = _scope_owner(request, {"notes:read", "notes:write"})
         db = SessionLocal()
         try:
-            note = db.query(Note).filter(Note.id == note_id).first()
+            note = db.query(Note).filter(Note.id == note_id, Note.deleted_at.is_(None)).first()
             if not note or (owner is not None and note.owner != owner):
                 raise HTTPException(status_code=404, detail="note not found")
             return MN._note_dict(note)

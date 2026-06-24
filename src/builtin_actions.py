@@ -1025,7 +1025,7 @@ async def action_daily_brief(owner: str, **kwargs) -> Tuple[str, bool]:
                 ev_q = owner_filter(ev_q, CalendarCal, owner, include_shared=_allow_null)
             events = ev_q.order_by(CalendarEvent.dtstart).all()
             # ----- Notes: pinned + non-archived todos with at least one undone item -----
-            n_q = db.query(Note).filter(Note.archived == False)  # noqa: E712
+            n_q = db.query(Note).filter(Note.archived == False, Note.deleted_at.is_(None))  # noqa: E712
             if owner:
                 n_q = owner_filter(n_q, Note, owner, include_shared=_allow_null)
             notes = n_q.all()
