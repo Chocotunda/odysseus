@@ -32,13 +32,15 @@ ALLOWED_SCOPES = {
     "areas:read",
     "areas:write",
     "links:read",
+    "notes:read",
+    "notes:write",
 }
 TOKEN_PROFILES = {
     "chat": ["chat"],
     "codex_todos": ["todos:read", "todos:write"],
     "codex_documents": ["documents:read", "documents:write"],
     "codex_email_drafts": ["email:read", "email:draft", "documents:read", "documents:write"],
-    "tide": ["todos:read", "todos:write", "people:read", "people:write", "areas:read", "areas:write", "links:read", "calendar:read"],
+    "tide": ["todos:read", "todos:write", "people:read", "people:write", "areas:read", "areas:write", "links:read", "calendar:read", "notes:read", "notes:write"],
 }
 
 
@@ -77,6 +79,7 @@ def _normalize_scopes(scopes: str | list[str] | None = None, profile: str | None
     ensure_before("cookbook:launch", "cookbook:read")
     ensure_before("people:write", "people:read")
     ensure_before("areas:write", "areas:read")
+    ensure_before("notes:write", "notes:read")
 
     return normalized or [DEFAULT_SCOPES]
 

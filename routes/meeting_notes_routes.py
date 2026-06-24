@@ -34,13 +34,28 @@ class PromoteBody(BaseModel):
 def setup_meeting_notes_routes():
     router = APIRouter(prefix="/api/meeting-notes", tags=["meeting-notes"])
 
-    def _owner(request: Request) -> Optional[str]:
+    def _scope_owner(request: Request, allowed: set) -> Optional[str]:
+        """Resolve owner, honouring API-token scopes.
+
+        Bearer-token callers must carry one of the scopes in `allowed`; any
+        other token gets 403. Cookie-session callers fall through to
+        require_user so existing browser behaviour is unchanged.
+        """
+        if getattr(request.state, "api_token", False):
+            scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+            if not scopes.intersection(allowed):
+                required = " or ".join(sorted(allowed))
+                raise HTTPException(403, f"API token missing required scope: {required}")
+            owner = getattr(request.state, "api_token_owner", None)
+            if not owner:
+                raise HTTPException(403, "API token has no owner")
+            return owner
         return require_user(request) or None
 
     @router.get("/meetings")
     def list_meetings(request: Request, q: str = ""):
         """Owner-scoped recent calendar events for the meeting picker."""
-        owner = _owner(request)
+        owner = _scope_owner(request, {"notes:read", "notes:write"})
         db = SessionLocal()
         try:
             cal_ids = [c.id for c in db.query(CalendarCal).filter(
@@ -56,7 +71,7 @@ def setup_meeting_notes_routes():
 
     @router.post("")
     def save(request: Request, body: MeetingNoteSave, background: BackgroundTasks):
-        owner = _owner(request)
+        owner = _scope_owner(request, {"notes:write"})
         db = SessionLocal()
         try:
             result = MN.save_meeting_note(
@@ -72,7 +87,7 @@ def setup_meeting_notes_routes():
     @router.get("/{note_id}")
     def get_note(request: Request, note_id: str):
         from core.database import Note
-        owner = _owner(request)
+        owner = _scope_owner(request, {"notes:read", "notes:write"})
         db = SessionLocal()
         try:
             note = db.query(Note).filter(Note.id == note_id).first()
@@ -84,7 +99,7 @@ def setup_meeting_notes_routes():
 
     @router.post("/{note_id}/promote")
     def promote(request: Request, note_id: str, body: PromoteBody):
-        owner = _owner(request)
+        owner = _scope_owner(request, {"notes:write"})
         db = SessionLocal()
         try:
             return MN.promote_action_item(db, owner, note_id, body.title,
