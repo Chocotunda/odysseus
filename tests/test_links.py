@@ -47,4 +47,9 @@ def test_remove_links_for_clears_both_directions():
     L.add_link(db, "alice", L.NODE_TASK, "t1", L.REL_FROM_NOTE, L.NODE_NOTE, "n1")
     removed = L.remove_links_for(db, "alice", L.NODE_NOTE, "n1")
     assert removed == 2
-    assert db.query(Link).count() == 0
+    # Edges are SOFT-deleted (tombstoned), not removed, so they sync to Tide as
+    # deletes — the rows stay but reverse-reads no longer return them.
+    assert db.query(Link).count() == 2
+    assert all(r.deleted_at is not None for r in db.query(Link).all())
+    assert L.links_from(db, "alice", L.NODE_NOTE, "n1") == []
+    assert L.links_to(db, "alice", L.NODE_NOTE, "n1") == []

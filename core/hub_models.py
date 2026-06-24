@@ -105,6 +105,8 @@ class Link(TimestampMixin, Base):
     rel       = Column(String, nullable=False)
     to_type   = Column(String, nullable=False)
     to_id     = Column(String, nullable=False)
+    deleted_at = Column(DateTime, nullable=True, index=True)  # soft-delete tombstone; NULL = live
+    seq        = Column(Integer, index=True)   # per-owner monotonic write sequence; the ?since= cursor
 
     __table_args__ = (
         Index('ix_links_from', 'owner', 'from_type', 'from_id'),
@@ -244,9 +246,83 @@ def next_plan_item_seq(db, owner) -> int:
     return (current or 0) + 1
 
 
+def _migrate_add_link_deleted_at_column():
+    """Add `deleted_at` (soft-delete tombstone) to links. Guarded + idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(links)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "deleted_at" not in columns:
+            conn.execute("ALTER TABLE links ADD COLUMN deleted_at DATETIME")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_links_deleted_at ON links(deleted_at)")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'deleted_at' to links")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"links.deleted_at migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_link_seq_column():
+    """Add per-owner monotonic `seq` to links + backfill existing rows. Guarded + idempotent.
+
+    Backfills live edges with a per-owner 1..N sequence (in a stable
+    updated_at, id order) so the initial full pull (?since=0) sees pre-existing
+    edges; mirrors _migrate_add_plan_item_seq_column."""
+    import sqlite3
+    from collections import defaultdict
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("PRAGMA table_info(links)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "seq" not in columns:
+            conn.execute("ALTER TABLE links ADD COLUMN seq INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_links_seq ON links(seq)")
+            # backfill: per-owner 1..N in a stable (updated_at, id) order
+            rows = conn.execute(
+                "SELECT id, owner FROM links ORDER BY owner, updated_at, id"
+            ).fetchall()
+            counters = defaultdict(int)
+            for rid, owner in rows:
+                counters[owner] += 1
+                conn.execute("UPDATE links SET seq = ? WHERE id = ?", (counters[owner], rid))
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added + backfilled 'seq' on links")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"links.seq migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def next_link_seq(db, owner) -> int:
+    """Next per-owner monotonic write sequence for Link (the /links/changes cursor).
+    Any code that writes a Link MUST set `seq = next_link_seq(db, owner)` before
+    commit, or the row/edit will never appear in the delta feed (seq > since skips NULL)."""
+    from sqlalchemy import func
+    current = db.query(func.max(Link.seq)).filter(Link.owner == owner).scalar()
+    return (current or 0) + 1
+
+
 def run_hub_migrations():
     """Run hub-owned column migrations (guarded + idempotent). Called from
     core.database.init_db() after create_all()."""
     _migrate_add_plan_item_planned_start_column()
     _migrate_add_plan_item_deleted_at_column()
     _migrate_add_plan_item_seq_column()
+    _migrate_add_link_deleted_at_column()
+    _migrate_add_link_seq_column()

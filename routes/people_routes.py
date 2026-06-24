@@ -78,7 +78,8 @@ def setup_people_routes():
             return {}
         rows = (db.query(Link)
                 .filter(Link.owner == owner, Link.from_type == NODE_PERSON,
-                        Link.from_id.in_(person_ids), Link.rel == REL_IN_AREA).all())
+                        Link.from_id.in_(person_ids), Link.rel == REL_IN_AREA,
+                        Link.deleted_at.is_(None)).all())   # exclude tombstoned edges
         return {r.from_id: r.to_id for r in rows}
 
     @router.get("")

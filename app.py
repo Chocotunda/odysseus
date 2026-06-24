@@ -776,6 +776,10 @@ app.include_router(setup_meeting_notes_routes())
 from routes.area_routes import setup_area_routes
 app.include_router(setup_area_routes())
 
+# Links delta feed (graph spine -> Tide sync; read-only, seq-cursor)
+from routes.link_routes import setup_link_routes
+app.include_router(setup_link_routes())
+
 # Today daily day-planner
 from routes.today_routes import setup_today_routes
 app.include_router(setup_today_routes())
