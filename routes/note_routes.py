@@ -82,13 +82,27 @@ class NotePatch(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _note_to_dict(note: Note) -> Dict[str, Any]:
+def _note_to_dict(note: Note, fold_items: bool = False) -> Dict[str, Any]:
+    """Serialize a Note row to a dict.
+
+    When ``fold_items=True`` (the Tide /changes sync feed only), the ``content``
+    string is enriched by folding the structured ``items`` checklist into
+    canonical markdown task lines, reusing the SAME renderer the .md vault uses
+    (``src.note_vault.fold_checklist_into_body``) so the synced body is
+    byte-identical to the vault file. ``items`` in the returned dict is left
+    untouched (still the parsed list) so the web Keep UI is unaffected.
+    """
     items = None
     if note.items:
         try:
             items = json.loads(note.items)
         except (json.JSONDecodeError, TypeError):
             items = None
+    content = note.content
+    if fold_items:
+        from src.note_vault import fold_checklist_into_body
+        # Read the RAW JSON string column (note.items), not the parsed list.
+        content = fold_checklist_into_body(note.content, note.items)
     ai_cls = None
     raw_ai = getattr(note, "ai_classification", None)
     if raw_ai:
@@ -100,7 +114,7 @@ def _note_to_dict(note: Note) -> Dict[str, Any]:
         "id": note.id,
         "owner": note.owner,
         "title": note.title,
-        "content": note.content,
+        "content": content,
         "items": items,
         "note_type": note.note_type,
         "color": note.color,
@@ -748,7 +762,7 @@ def setup_note_routes(task_scheduler=None):
             q = q.filter(Note.seq > since)  # exclusive; includes tombstones
             q = q.order_by(Note.seq.asc())
             rows = q.all()
-            items = [_note_to_dict(n) for n in rows]
+            items = [_note_to_dict(n, fold_items=True) for n in rows]
             cursor = max((n.seq for n in rows), default=since)
             return {"items": items, "cursor": cursor}
         finally:
@@ -813,6 +827,16 @@ def setup_note_routes(task_scheduler=None):
             if body.agent_session_id is not None:
                 note.agent_session_id = body.agent_session_id
 
+            # Write-back reconciliation (markdown-canonical model): if the client
+            # set `content` but did NOT also set `items`, the new body wins and the
+            # now-stale structured checklist column is cleared. This handles Tide,
+            # which PATCHes/PUTs the folded markdown `content` but never sends
+            # `items`. A request carrying BOTH (the web editor's own save) is
+            # respected as-is and not clobbered.
+            if body.content is not None and body.items is None:
+                note.items = None
+                flag_modified(note, "items")
+
             notes_service.persist_note(db, note)
             db.commit()
             db.refresh(note)
@@ -845,6 +869,14 @@ def setup_note_routes(task_scheduler=None):
                     flag_modified(note, "items")
                 else:
                     setattr(note, key, value)
+            # Write-back reconciliation (markdown-canonical model): if the client
+            # set `content` but did NOT also set `items`, the new body wins and the
+            # now-stale structured checklist column is cleared. This handles Tide,
+            # which PATCHes the folded markdown `content` but never sends `items`.
+            # A PATCH carrying BOTH content and items is respected as-is.
+            if "content" in fields and fields["content"] is not None and "items" not in fields:
+                note.items = None
+                flag_modified(note, "items")
             notes_service.persist_note(db, note)
             db.commit()
             db.refresh(note)

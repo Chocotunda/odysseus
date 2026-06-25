@@ -122,12 +122,28 @@ def _frontmatter(note, links: List[str]) -> str:
     return "\n".join(fm)
 
 
-def _body(note) -> str:
-    body = getattr(note, "content", None) or ""
-    checklist = _checklist_to_md(getattr(note, "items", None))
+def fold_checklist_into_body(content: Optional[str], items_json: Optional[str]) -> str:
+    """Merge structured checklist `items` into the markdown `content` body.
+
+    This is the single source of truth for how `items` (the JSON checklist
+    column) get rendered as canonical `- [ ] ` / `- [x] ` markdown task lines
+    and appended to the body. Used by BOTH the .md vault writer (`_body`) and
+    the Tide sync serializer (`_note_to_dict(fold_items=True)`), so the file on
+    disk and the synced body are byte-identical. The `checklist not in body`
+    guard keeps re-folding idempotent (a body that already contains the task
+    lines is not appended to a second time).
+    """
+    body = content or ""
+    checklist = _checklist_to_md(items_json)
     if checklist and checklist not in body:
-        body = (body + "\n\n" + checklist).strip() if body else checklist
+        body = (body + "\n\n" + checklist).strip() if body.strip() else checklist
     return body
+
+
+def _body(note) -> str:
+    return fold_checklist_into_body(
+        getattr(note, "content", None), getattr(note, "items", None)
+    )
 
 
 def render(note, links: List[str]) -> str:

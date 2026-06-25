@@ -472,3 +472,156 @@ def test_post_revives_soft_deleted_note(monkeypatch, tmp_path):
         assert db.query(Note).filter(Note.id == cid).count() == 1
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Issue #2: items->markdown fold on the /changes (Tide) feed only.
+# ---------------------------------------------------------------------------
+
+def test_changes_folds_items_into_content_markdown(monkeypatch, tmp_path):
+    """A note with items=[{text,done}] and empty/null content appears in
+    /api/notes/changes with `content` containing rendered `- [ ] ` / `- [x] `
+    task lines, while still carrying the structured `items` list."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    changes = _endpoint(router, "/changes", "GET")
+
+    items = [{"text": "buy milk", "done": False}, {"text": "call dad", "done": True}]
+    create(
+        _req("alice"),
+        body=note_routes.NoteCreate(
+            title="Daily next gen", content=None, items=items, note_type="checklist"
+        ),
+    )
+
+    out = changes(_req("alice"), since=0)
+    assert len(out["items"]) == 1
+    rec = out["items"][0]
+    assert "- [ ] buy milk" in rec["content"]
+    assert "- [x] call dad" in rec["content"]
+    # structured items still carried (web/other consumers unaffected)
+    assert rec["items"] == items
+
+
+def test_changes_fold_matches_vault_body_byte_for_byte(monkeypatch, tmp_path):
+    """The folded /changes content equals what the .md vault renderer writes."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    changes = _endpoint(router, "/changes", "GET")
+
+    items = [{"text": "one", "done": False}, {"text": "two", "done": True}]
+    created = create(
+        _req("alice"),
+        body=note_routes.NoteCreate(title="T", content="intro", items=items),
+    )
+
+    out = changes(_req("alice"), since=0)
+    rec = next(i for i in out["items"] if i["id"] == created["id"])
+
+    db = SF()
+    try:
+        row = db.query(Note).filter(Note.id == created["id"]).first()
+        assert rec["content"] == note_vault._body(row)
+    finally:
+        db.close()
+
+
+def test_list_and_get_do_not_fold_items(monkeypatch, tmp_path):
+    """Web Keep list (GET /api/notes) and get-one keep raw content + structured
+    items: content is the original (unfolded) string, items is the parsed list."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    list_ep = _endpoint(router, "", "GET")
+    get_ep = _endpoint(router, "/{note_id}", "GET")
+
+    items = [{"text": "buy milk", "done": False}]
+    created = create(
+        _req("alice"),
+        body=note_routes.NoteCreate(title="L", content="original body", items=items),
+    )
+
+    listed = list_ep(_req("alice"))["notes"][0]
+    assert listed["content"] == "original body"   # NOT folded
+    assert "- [ ]" not in (listed["content"] or "")
+    assert listed["items"] == items
+
+    one = get_ep(_req("alice"), note_id=created["id"])
+    assert one["content"] == "original body"       # NOT folded
+    assert "- [ ]" not in (one["content"] or "")
+    assert one["items"] == items
+
+
+# ---------------------------------------------------------------------------
+# Issue #2: write-back reconciliation (markdown-canonical, content wins).
+# ---------------------------------------------------------------------------
+
+def test_patch_content_only_on_items_note_clears_items(monkeypatch, tmp_path):
+    """A content-only PATCH on a note that has structured items clears the
+    now-stale items column (content becomes canonical)."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    patch = _endpoint(router, "/{note_id}", "PATCH")
+
+    items = [{"text": "buy milk", "done": False}]
+    n = create(_req("alice"), body=note_routes.NoteCreate(title="t", items=items))
+    out = patch(
+        _req("alice"), note_id=n["id"],
+        body=note_routes.NotePatch.model_validate({"content": "- [x] buy milk"}),
+    )
+    assert out["content"] == "- [x] buy milk"
+    assert out["items"] is None   # stale structured list cleared
+
+
+def test_patch_content_and_items_preserves_both(monkeypatch, tmp_path):
+    """A PATCH carrying BOTH content and items is respected as-is (no clobber)."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    patch = _endpoint(router, "/{note_id}", "PATCH")
+
+    n = create(_req("alice"), body=note_routes.NoteCreate(title="t", items=[{"text": "old", "done": False}]))
+    new_items = [{"text": "new", "done": True}]
+    out = patch(
+        _req("alice"), note_id=n["id"],
+        body=note_routes.NotePatch.model_validate({"content": "body", "items": new_items}),
+    )
+    assert out["content"] == "body"
+    assert out["items"] == new_items   # both honored
+
+
+def test_put_content_only_on_items_note_clears_items(monkeypatch, tmp_path):
+    """PUT with content but no items also clears the stale items column."""
+    import src.note_vault as note_vault
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    SF = _sf()
+    monkeypatch.setattr(note_routes, "SessionLocal", SF)
+    router = note_routes.setup_note_routes()
+    create = _endpoint(router, "", "POST")
+    put = _endpoint(router, "/{note_id}", "PUT")
+
+    n = create(_req("alice"), body=note_routes.NoteCreate(title="t", items=[{"text": "x", "done": False}]))
+    out = put(
+        _req("alice"), note_id=n["id"],
+        body=note_routes.NoteUpdate(content="just text"),
+    )
+    assert out["content"] == "just text"
+    assert out["items"] is None
