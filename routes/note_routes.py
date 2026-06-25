@@ -603,7 +603,7 @@ def setup_note_routes(task_scheduler=None):
     NOTE_READ_SCOPES = {"notes:read", "notes:write"}
     NOTE_WRITE_SCOPES = {"notes:write"}
 
-    def _owner(request: Request, allowed: set = NOTE_READ_SCOPES) -> Optional[str]:
+    def _owner(request: Request, allowed: set) -> Optional[str]:
         # Resolve the data owner, honoring API-token scopes (mirrors
         # routes/planner_routes.py:_owner). Bearer-token callers must carry
         # one of `allowed` and resolve to their token's owner; everyone else

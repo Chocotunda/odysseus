@@ -1,4 +1,5 @@
 import os
+import yaml
 from types import SimpleNamespace
 from datetime import datetime, timezone
 
@@ -75,3 +76,44 @@ def test_rename_on_title_change_removes_old(tmp_path, monkeypatch):
     new = note_vault.write_note(n, links=[])
     assert new.exists()
     assert not old.exists()  # old slug file removed
+
+
+def _extract_frontmatter(text: str) -> dict:
+    """Parse the YAML frontmatter block from a rendered .md file."""
+    # Strip the opening '---\n', find the closing '---\n' and parse between.
+    assert text.startswith("---\n"), "Expected frontmatter to start with ---"
+    rest = text[4:]  # skip opening '---\n'
+    end = rest.index("---\n")
+    fm_text = rest[:end]
+    return yaml.safe_load(fm_text)
+
+
+def test_yaml_safe_title_with_injection(tmp_path, monkeypatch):
+    """A title containing a newline + YAML must not inject extra top-level keys."""
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    evil_title = "Legit Title\n---\nmalicious: true"
+    p = note_vault.write_note(_note(title=evil_title), links=[])
+    text = p.read_text(encoding="utf-8")
+    fm = _extract_frontmatter(text)
+    # The whole evil string must be a single 'title' value — NOT a top-level key.
+    assert "malicious" not in fm, (
+        f"YAML injection succeeded: 'malicious' appeared as a top-level key. fm={fm!r}"
+    )
+    assert isinstance(fm.get("title"), str), "title must be a plain string"
+    assert "\n---\nmalicious: true" in fm["title"], (
+        "The newline-containing title should be preserved inside the quoted scalar"
+    )
+
+
+def test_empty_label_emits_empty_tags_list(tmp_path, monkeypatch):
+    """A note with no label must emit 'tags: []' (not null) in frontmatter."""
+    monkeypatch.setattr(note_vault, "VAULT_DIR", str(tmp_path))
+    p = note_vault.write_note(_note(label=None), links=[])
+    text = p.read_text(encoding="utf-8")
+    # Verify the raw text contains the empty flow-sequence form.
+    assert "tags: []" in text, f"Expected 'tags: []' in frontmatter, got:\n{text}"
+    fm = _extract_frontmatter(text)
+    # yaml.safe_load must produce an empty list, not None.
+    assert fm.get("tags") == [], (
+        f"Expected tags==[], got {fm.get('tags')!r}. Full fm: {fm!r}"
+    )

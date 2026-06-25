@@ -43,6 +43,34 @@ def vault_path_for(note) -> Path:
     return Path(VAULT_DIR) / _filename(note)
 
 
+def _yaml_scalar(value: str) -> str:
+    """Return *value* as a plain YAML scalar when it's safe, otherwise as a
+    double-quoted, escaped string.
+
+    "Plain-safe" means:
+    - no newline
+    - no leading or trailing whitespace
+    - does not start with a YAML indicator character
+      (: - # [ ] { } " ' > | @ & * ! % ?)
+    - does not contain the substring ': ' (key-colon-space)
+    - does not contain ' #' (inline comment marker)
+
+    Simple titles like 'Q3 Planning' remain unquoted.
+    """
+    _INDICATOR_STARTS = frozenset(":- #[]{}\"'>|@&*!%?")
+    if (
+        "\n" in value
+        or value != value.strip()
+        or (value and value[0] in _INDICATOR_STARTS)
+        or ": " in value
+        or " #" in value
+    ):
+        # Double-quoted form: escape backslash, double-quote, newline.
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        return f'"{escaped}"'
+    return value
+
+
 def _iso(dt) -> str:
     if dt is None:
         return ""
@@ -70,20 +98,26 @@ def _frontmatter(note, links: List[str]) -> str:
     # Deterministic key order; deterministic list order (sorted links).
     fm: list[str] = ["---"]
     fm.append(f"id: {note.id}")
-    fm.append(f"title: {getattr(note, 'title', '') or ''}")
+    fm.append(f"title: {_yaml_scalar(getattr(note, 'title', '') or '')}")
     fm.append(f"created: {_iso(getattr(note, 'created_at', None))}")
     fm.append(f"updated: {_iso(getattr(note, 'updated_at', None))}")
     tag = getattr(note, "label", None)
-    fm.append("tags:")
     if tag:
-        fm.append(f"- {tag}")
-    fm.append(f"color: {getattr(note, 'color', None) or ''}")
+        fm.append("tags:")
+        fm.append(f"- {_yaml_scalar(tag)}")
+    else:
+        fm.append("tags: []")
+    fm.append(f"color: {_yaml_scalar(getattr(note, 'color', None) or '')}")
     fm.append(f"pinned: {'true' if getattr(note, 'pinned', False) else 'false'}")
     fm.append(f"archived: {'true' if getattr(note, 'archived', False) else 'false'}")
-    fm.append(f"note_type: {getattr(note, 'note_type', 'note') or 'note'}")
-    fm.append("links:")
-    for link in sorted(links or []):
-        fm.append(f'- "{link}"')
+    fm.append(f"note_type: {_yaml_scalar(getattr(note, 'note_type', 'note') or 'note')}")
+    sorted_links = sorted(links or [])
+    if sorted_links:
+        fm.append("links:")
+        for link in sorted_links:
+            fm.append(f'- "{link}"')
+    else:
+        fm.append("links: []")
     fm.append("---")
     return "\n".join(fm)
 
