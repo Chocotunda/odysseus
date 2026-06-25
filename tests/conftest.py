@@ -29,6 +29,23 @@ try:
 except ImportError:
     pass  # not installed - the stubs below will handle it
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolate_note_vault(tmp_path, monkeypatch):
+    """Point the note .md vault at a per-test temp dir so any test exercising
+    note_vault.write_note / notes_service.persist_note never pollutes the
+    developer's real ./data/vault. Narrowly scoped to VAULT_DIR (not DATA_DIR)
+    so DATA_DIR-dependent tests (e.g. research reports) are unaffected. Tests
+    that set their own VAULT_DIR just override this (last setattr wins)."""
+    try:
+        import src.note_vault as _nv
+        monkeypatch.setattr(_nv, "VAULT_DIR", str(tmp_path / "vault"))
+    except Exception:
+        pass
+    yield
+
 def _has_module(mod_name: str) -> bool:
     try:
         return importlib.util.find_spec(mod_name) is not None
