@@ -238,3 +238,28 @@ After the sync loop shipped, the user observed the de-facto shift toward Tide an
 **What this re-eval confirms (do not relitigate):** native Tide as the daily client; Odysseus-canonical / CloudKit-rejected (structural); the hand-rolled online-first sync architecture; web frontend kept as-is; per-client 30s polling near-term (ntfy-push is a known deferred upgrade); the wrapper's only un-replaced value is back-office packaging + backend boot.
 
 **Re-eval provenance:** workflow `wf_eaf48a5d-99a` (9 agents; 4 mapping readers + 4 adversarial lenses + synthesis).
+
+---
+
+## 11. Editor architecture re-evaluation — hybrid (native shell + embedded Milkdown) (2026-06-25)
+
+After Notes Slice A shipped (Markdown-canonical body, native SwiftUI `TextEditor`), the user reconsidered the **whole purely-native path** — driven by (1) the notes/block editor specifically feeling like a wall, and (2) long-term maintainability of the whole Swift/SwiftUI stack including AI-assisted dev velocity (web has far more training-corpus/docs/ecosystem; the Swift loop has cost real friction). The user leaned toward a web editor (avoid building a custom engine) and asked to re-look at Tauri/Electron. Four research passes (build-vs-adopt sweep; "what Craft/Notion/Routine/Tana use"; Tauri/Electron-mobile viability; a Tide-repo discard inventory).
+
+**Verdict — keep the native shell; move only the editor to web. A *full* web pivot is the wrong trade; an *embedded* web editor is the right one.**
+- **What the inspirations actually use:** Notion (Electron desktop + web `contenteditable` editor in a WebView on mobile — "saved the editor for last", ~11-person mobile team), Routine (Electron + Vue + **ProseMirror**), Tana (100% web + Electron + native-shell-over-webview) all ship a **web editor**; only **Craft** is native — and Craft built a *fully custom* canvas layout/animation engine (explicitly not SwiftUI), with Markdown as export-only. I.e. a true native block editor is the single most expensive component, which even the giants refuse to duplicate.
+- **Why a full Tauri/Electron pivot is rejected:** Electron has **no mobile**; Tauri v2 iOS has no polished-daily-driver track record; and decisively, the user's **meeting-transcript audio** requirement breaks on WKWebView — `getUserMedia` is unreliable and the **mic auto-mutes when the app backgrounds** (long-standing unfixed WebKit bug), forcing a native Swift audio path *anyway* and dissolving the "one web codebase" payoff. The iPhone is "somewhere in between" (solid task mgmt + light note editing) — and webview-on-mobile is weakest exactly there.
+- **Sunk-cost reality (Tide repo inventory):** ~17.4k LOC; ~50% discardable UI/persistence, ~24% portable as a **REST sync contract** (the contract is the asset, not the Swift code), ~26% genuine engine logic (SurfacingEngine, CaptureParser, DayMath, Ordinal) ≈1 week to port. So a rewrite survives as specs — **but iOS is not solved by Tauri/Electron**, negating the single-codebase win.
+- **AI-fluency, honestly:** the "web is easier for the AI" claim is real on ecosystem/docs/iteration speed, but it's mostly a **SwiftUI-vs-React gap, not Swift-vs-TS**, and partly offset by web's framework churn (confidently-wrong-about-last-year's-framework). Best captured in a **self-contained web component**, not a whole-app rewrite.
+
+**Decision taken (user, 2026-06-25): Hybrid (option "B").** Keep native Tide shell + sync engine + native audio capture + native task surfaces; **embed Milkdown** (MIT, ProseMirror + remark — the one leading editor where **Markdown is canonical, not a lossy export**) in a `WKWebView` for the note **body only**. Title + backlinks stay native. The highest-churn surface (the editor) moves to the fast web-devtools loop where AI velocity is highest; everything load-bearing stays native. Residual Swift-loop pain addressed with tooling (scripted `xcodebuild`/simulator-screenshot harness), not a rewrite.
+
+**Scope / constraints:**
+- Editor lives **self-contained in the `tide` repo** (`tide/editor/`, Vite → bundled into the app, offline). **Back-office reuse is explicitly NOT a goal** — add only if it ever proves genuinely necessary.
+- Bridge is **markdown-string-based** (possible because Milkdown is markdown-canonical) — no HTML/JSON, no lossy round-trip. The Slice A sync/vault/`/api/notes/changes` contract is **untouched** — only the editing *view* swaps.
+- `[[`/`@` link picker deferred to Slice B-2 (Milkdown slash + a custom remark node serializing to `[[Type/Name]]`; candidates from the on-device store via a bridge callback). Manual `[[Type/Name]]` still resolves server-side today.
+- Editor library lock-in is low (markdown-canonical) — TipTap is the documented runner-up; a swap wouldn't touch Swift/sync.
+
+**What this confirms (do not relitigate):** native Tide shell stays; no Tauri/Electron pivot; no custom native TextKit editor engine; Milkdown-in-WKWebView for the notes body; markdown-canonical contract preserved.
+
+**Spec:** `~/Projects/tide/docs/superpowers/specs/2026-06-25-tide-notes-milkdown-editor-design.md` (Slice B-1).
+**Provenance:** build-vs-adopt sweep (workflow `wf_61c74075-46b`, 32 candidates / 24 verified); "what the inspirations use" (4 parallel agents); Tauri/Electron-mobile + web-editor + AI-velocity + Tide-discard-inventory (4 parallel agents).
