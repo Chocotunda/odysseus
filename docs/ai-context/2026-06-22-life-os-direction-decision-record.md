@@ -6,6 +6,8 @@
 
 > **How to read this:** §1 is the answer. §2 is the why. §3 is the full deliberation (every angle, including rejected options and reversals). §4 is what the research found (with honest confidence). §5–6 are the conclusion and plan. §7 is what's still open. §8 is what already shipped. §9 is sources.
 
+> **📌 Update 2026-06-26 — Track A host/LLM/cost settled (sibling doc):** the hosting (§3.3/§7) and model (§3.3) questions now have concrete, adversarially-verified 2026 numbers in **`docs/ai-context/2026-06-26-track-a-host-llm-cost-decision-record.md`**. In short: **slim Odysseus (don't replace/Apple-canonical/PKM-swap); cheap CPU host (home N100 or Hetzner CAX21), no GPU; DeepSeek V4-Flash API as the capable online LLM (self-hosted GPU rejected ~3–20× costlier); Mac Ollama for uncensored; ntfy→APNs; Codex/GLM subs = interactive coding only (can't back Hermes); Hermes = own isolated VM, DeepSeek-backed, defer-then-trial; first build step = prompt caching in `agent_loop.py`.** Realistic all-in ≈ $1–25/mo without Hermes, ~$50–120/mo typical with it. That doc has the stand-up plan.
+
 ---
 
 ## 1. Executive summary
