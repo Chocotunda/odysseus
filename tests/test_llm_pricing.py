@@ -1,4 +1,7 @@
+import importlib
+
 from src.llm_pricing import compute_cost, price_for
+import src.llm_pricing
 
 
 def test_known_model_standard_cost():
@@ -28,4 +31,25 @@ def test_unknown_model_is_free():
 
 def test_model_id_contains_fallback():
     # provider-prefixed id still resolves
-    assert price_for("us.anthropic.claude-opus-4-8") is not None
+    assert price_for("us.anthropic.claude-opus-4-8") == (5.0, 25.0, 0.5)
+
+
+def test_invalid_json_ignored(monkeypatch):
+    """Invalid JSON is ignored, seed table still intact"""
+    monkeypatch.setenv("ODYSSEUS_LLM_PRICING_JSON", "{not valid json}")
+    importlib.reload(src.llm_pricing)
+    assert src.llm_pricing.price_for("deepseek-v4-flash") == (0.14, 0.28, 0.0028)
+
+
+def test_empty_env_falls_back(monkeypatch):
+    """Empty env value falls back to seed table"""
+    monkeypatch.setenv("ODYSSEUS_LLM_PRICING_JSON", "")
+    importlib.reload(src.llm_pricing)
+    assert src.llm_pricing.price_for("deepseek-v4-flash") is not None
+
+
+def test_valid_override_applies(monkeypatch):
+    """Valid override applies to PRICING dict"""
+    monkeypatch.setenv("ODYSSEUS_LLM_PRICING_JSON", '{"my-test-model": [1.0, 2.0, 0.1]}')
+    importlib.reload(src.llm_pricing)
+    assert src.llm_pricing.price_for("my-test-model") == (1.0, 2.0, 0.1)
