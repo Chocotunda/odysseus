@@ -110,6 +110,10 @@ PASSWORD_MIN_LENGTH = 8
 DEFAULT_TEMPERATURE = 1.0
 DEFAULT_MAX_TOKENS = 0
 
+# --- Phase 0 LLM spend cap (0.0 disables the cap entirely) ---
+DAILY_LLM_BUDGET_USD = float(os.getenv("ODYSSEUS_DAILY_LLM_BUDGET_USD") or 0.0)
+DAILY_LLM_WARN_PCT = int(os.getenv("ODYSSEUS_DAILY_LLM_WARN_PCT") or 80)
+
 
 def internal_api_base() -> str:
     """Base URL for in-process loopback calls to Odysseus's own API.
