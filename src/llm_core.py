@@ -2050,7 +2050,15 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                 if _anth_c_read or _anth_c_miss:
                                     _anth_usage_data["cache_hit_tokens"] = _anth_c_read
                                     _anth_usage_data["cache_miss_tokens"] = _anth_c_miss
-                                _account_llm_cost(url, model, _anth_usage_data)
+                                # Cost dict normalises to total tokens so cache-read is
+                                # billed at the cheaper cache_hit rate and
+                                # (fresh_input + cache_creation) at the full input rate.
+                                _anth_cost_usage = {
+                                    "input_tokens": _anth_input_tokens + _anth_c_read + _anth_c_miss,
+                                    "output_tokens": _anth_output_tokens,
+                                    "cache_hit_tokens": _anth_c_read,
+                                }
+                                _account_llm_cost(url, model, _anth_cost_usage)
                                 yield f'data: {json.dumps({"type": "usage", "data": _anth_usage_data})}\n\n'
                             yield "data: [DONE]\n\n"
                             return
