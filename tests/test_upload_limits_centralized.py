@@ -10,6 +10,7 @@ constant read through the validated ``read_byte_limit_env``. These tests pin:
 """
 
 import importlib
+import os
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,14 @@ def _reload_clean(monkeypatch):
 @pytest.fixture(autouse=True)
 def _restore_module():
     # Ensure later tests see the env-default module, not a test-mutated reload.
+    # Clear the limit env vars FIRST: the invalid-value tests leave an env var
+    # set (e.g. "0"/"not-an-int") that, depending on fixture finalization order,
+    # may still be present here -- a bare reload would then re-raise the very
+    # ValueError under test at teardown. Unconditional pop makes the restore
+    # reload independent of monkeypatch teardown ordering.
     yield
+    for env, _ in _LIMITS.values():
+        os.environ.pop(env, None)
     importlib.reload(upload_limits)
 
 
