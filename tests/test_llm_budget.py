@@ -41,3 +41,11 @@ def test_add_spend_accumulates(monkeypatch):
     budget.add_spend(1.0)
     budget.add_spend(2.5)
     assert round(budget.today_spend(), 2) == 3.5
+
+
+def test_should_warn_fires_on_direct_jump_to_exceeded(monkeypatch):
+    _reset(monkeypatch, 10.0, warn=80)
+    budget.add_spend(12.0)                 # ok -> exceeded in one step
+    assert budget.budget_status() == "exceeded"
+    assert budget.should_warn() is True    # advisory still fires once
+    assert budget.should_warn() is False   # de-duped for the day

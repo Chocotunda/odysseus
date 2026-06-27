@@ -64,7 +64,7 @@ def budget_status() -> str:
 
 def should_warn() -> bool:
     """True at most once per local day, when at/over the warn threshold."""
-    if budget_status() != "warn":
+    if budget_status() not in ("warn", "exceeded"):
         return False
     key = day_key()
     if key in _WARNED_DAYS:
