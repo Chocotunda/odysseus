@@ -8,12 +8,14 @@ def _names(schemas):
 def test_function_tool_schemas_is_ordered_list():
     # Prefix caching (DeepSeek auto-cache / llama.cpp KV) requires the tools
     # array to serialize identically across rounds. The source must be an
-    # order-stable list, and filtering it by a membership set must preserve order.
+    # order-stable list, and filtering it by a membership set must preserve
+    # the source order (NOT the set's iteration order).
     assert isinstance(FUNCTION_TOOL_SCHEMAS, list)
     selected = {"manage_memory", "web_search"}
-    once = [s for s in FUNCTION_TOOL_SCHEMAS if s.get("function", {}).get("name") in selected]
-    twice = [s for s in FUNCTION_TOOL_SCHEMAS if s.get("function", {}).get("name") in selected]
-    assert _names(once) == _names(twice)  # deterministic across rebuilds
+    filtered = [s for s in FUNCTION_TOOL_SCHEMAS if s.get("function", {}).get("name") in selected]
+    # web_search is defined before manage_memory in the source list; the
+    # set-filter must preserve that order, not reorder by the set.
+    assert _names(filtered) == ["web_search", "manage_memory"]
 
 
 def test_no_duplicate_tool_names():
