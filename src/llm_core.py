@@ -57,6 +57,19 @@ def _account_llm_cost(url: str, model: str, usage: dict) -> None:
         logger.warning("LLM cost accrual failed: %s", e)
 
 
+def _extract_cache_tokens(usage: dict) -> dict:
+    """Normalize provider cache-usage fields to a common shape.
+
+    DeepSeek: prompt_cache_hit_tokens / prompt_cache_miss_tokens.
+    Anthropic: cache_read_input_tokens / cache_creation_input_tokens.
+    Returns zeros when the provider does not report cache fields.
+    """
+    u = usage or {}
+    hit = int(u.get("prompt_cache_hit_tokens") or u.get("cache_read_input_tokens") or 0)
+    miss = int(u.get("prompt_cache_miss_tokens") or u.get("cache_creation_input_tokens") or 0)
+    return {"cache_hit_tokens": hit, "cache_miss_tokens": miss}
+
+
 class LLMConfig:
     """Configuration constants for LLM operations."""
     DEFAULT_TIMEOUT = 30
@@ -1950,6 +1963,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     if provider == "anthropic":
         _anth_input_tokens = 0
         _anth_output_tokens = 0
+        _anth_c_read = 0   # cache_read_input_tokens from message_start
+        _anth_c_miss = 0   # cache_creation_input_tokens from message_start
         # Track tool_use blocks: {index: {id, name, arguments_json}}
         _anth_tool_blocks: Dict[int, Dict] = {}
         _anth_block_idx = -1
@@ -2009,6 +2024,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                             # stable system+tools prefix was served from cache this round.
                             _c_read = _u.get("cache_read_input_tokens", 0)
                             _c_write = _u.get("cache_creation_input_tokens", 0)
+                            _anth_c_read = _c_read
+                            _anth_c_miss = _c_write
                             if _c_read or _c_write:
                                 logger.info(
                                     "[anthropic-cache] read=%s write=%s fresh_input=%s",
@@ -2029,7 +2046,12 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                     })
                                 yield f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
                             if _anth_input_tokens or _anth_output_tokens:
-                                yield f'data: {json.dumps({"type": "usage", "data": {"input_tokens": _anth_input_tokens, "output_tokens": _anth_output_tokens}})}\n\n'
+                                _anth_usage_data = {"input_tokens": _anth_input_tokens, "output_tokens": _anth_output_tokens}
+                                if _anth_c_read or _anth_c_miss:
+                                    _anth_usage_data["cache_hit_tokens"] = _anth_c_read
+                                    _anth_usage_data["cache_miss_tokens"] = _anth_c_miss
+                                _account_llm_cost(url, model, _anth_usage_data)
+                                yield f'data: {json.dumps({"type": "usage", "data": _anth_usage_data})}\n\n'
                             yield "data: [DONE]\n\n"
                             return
                         elif evt == "error":
@@ -2163,6 +2185,10 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                             _usage_data["gen_tps"] = round(_tm["predicted_per_second"], 2)
                                         if _tm.get("prompt_per_second"):
                                             _usage_data["prefill_tps"] = round(_tm["prompt_per_second"], 2)
+                                    _cache = _extract_cache_tokens(u)
+                                    if _cache["cache_hit_tokens"] or _cache["cache_miss_tokens"]:
+                                        _usage_data.update(_cache)
+                                        logger.info("[llm-cache] model=%s hit=%s miss=%s", _actual_model or model, _cache["cache_hit_tokens"], _cache["cache_miss_tokens"])
                                     if _actual_model:
                                         _usage_data["model"] = _actual_model
                                         if not _same_model_identity(_actual_model, model):
