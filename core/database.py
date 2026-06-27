@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, UniqueConstraint, func, text
+from sqlalchemy import event, create_engine, Column, String, Text, Boolean, DateTime, Integer, Float, ForeignKey, JSON, Index, UniqueConstraint, func, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
@@ -1722,6 +1722,13 @@ class Integration(TimestampMixin, Base):
     enabled = Column(Boolean, default=True)
 
 
+class DailyLLMSpend(TimestampMixin, Base):
+    """One row per local day: cumulative USD spent on metered LLM calls.
+    Persistent so a per-day budget survives a process restart (Phase 0 cap)."""
+    __tablename__ = "daily_llm_spend"
+
+    day      = Column(String, primary_key=True, index=True)   # "YYYY-MM-DD" local
+    cost_usd = Column(Float, nullable=False, default=0.0)
 
 
 
