@@ -1761,7 +1761,12 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - data: [DONE]                       — end of stream
     """
     provider = _detect_provider(url)
-    _enforce_budget(url)
+    try:
+        _enforce_budget(url)
+    except LLMBudgetExceeded as e:
+        yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 402})}\n\n'
+        yield 'data: [DONE]\n\n'
+        return
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.

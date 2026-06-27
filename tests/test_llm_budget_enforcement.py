@@ -49,3 +49,42 @@ def test_account_cost_skips_local(monkeypatch):
     llm._account_llm_cost("http://localhost:11434/v1/chat/completions",
                           "deepseek-v4-flash", {"input_tokens": 1_000_000, "output_tokens": 0})
     assert budget.today_spend() == 0.0
+
+
+# ── Fix 2: stream_llm yields a clean error event instead of raising ──────────
+
+_METERED_URL = "https://api.deepseek.com/v1/chat/completions"
+
+
+async def test_stream_llm_over_budget_yields_error_event(monkeypatch):
+    """When the daily cap is exceeded stream_llm must yield an error SSE
+    event (status 402) and [DONE], then return — no exception must propagate.
+    """
+    _reset(monkeypatch, 1.0)
+    budget.add_spend(2.0)   # now over cap
+
+    chunks = []
+    async for chunk in llm.stream_llm(
+        url=_METERED_URL,
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": "hello"}],
+    ):
+        chunks.append(chunk)
+
+    assert len(chunks) == 2, f"Expected 2 chunks, got {chunks}"
+    error_chunk = chunks[0]
+    done_chunk = chunks[1]
+
+    assert error_chunk.startswith("event: error\n"), (
+        f"First chunk should be an error event, got: {error_chunk!r}"
+    )
+    import json as _json
+    data_line = error_chunk.split("data: ", 1)[1].strip()
+    payload = _json.loads(data_line)
+    assert payload.get("status") == 402, f"Expected status 402, got: {payload}"
+    assert "budget" in payload.get("error", "").lower() or payload.get("error"), (
+        f"Expected a budget message in error field, got: {payload}"
+    )
+    assert done_chunk.strip() == "data: [DONE]", (
+        f"Expected [DONE] as second chunk, got: {done_chunk!r}"
+    )
