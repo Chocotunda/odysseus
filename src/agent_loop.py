@@ -755,6 +755,38 @@ def _extract_last_user_message(messages: List[Dict]) -> str:
     return ""
 
 
+def _strip_think_blocks(text: str) -> str:
+    """Linear-time equivalent of
+    ``re.sub(r'<think>.*?</think>', '', text, flags=DOTALL|IGNORECASE)``.
+
+    The lazy regex rescans to end-of-string from every ``<think>`` opener when
+    a closer is missing -> O(n^2) on untrusted model output (prompt injection
+    can echo thousands of openers). This forward-only scan pairs each opener
+    with the next closer in a single pass. Output is byte-for-byte identical to
+    the original narrow regex: only literal ``<think>``/``</think>`` (any case)
+    are matched, a dangling opener with no closer is left intact, and an orphan
+    ``</think>`` is never stripped.
+    """
+    if not text:
+        return text
+    lowered = text.lower()
+    parts = []
+    pos = 0
+    while True:
+        start = lowered.find("<think>", pos)
+        if start == -1:
+            parts.append(text[pos:])
+            break
+        end = lowered.find("</think>", start + 7)
+        if end == -1:
+            # No closer for this opener: lazy regex matches nothing here.
+            parts.append(text[pos:])
+            break
+        parts.append(text[pos:start])
+        pos = end + 8  # len("</think>")
+    return "".join(parts)
+
+
 _LOW_SIGNAL_RE = re.compile(r"^[\W_]*$", re.UNICODE)
 _CASUAL_OPENING_RE = re.compile(
     r"^\s*(?:h+i+|hey+|hello+|yo+|sup+|what'?s up|wass?up|hiya|howdy|"
@@ -1837,7 +1869,7 @@ async def _run_verifier_subagent(
     except Exception as e:
         logger.warning(f"[agent] verifier subagent failed: {e}")
         return []
-    raw = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL | re.IGNORECASE)
+    raw = _strip_think_blocks(raw or "")
     last_v = None
     for line in raw.splitlines():
         if "VERIFICATION:" in line:
@@ -2459,7 +2491,6 @@ async def stream_agent_loop(
     # backstop. Counting identical repeats — not distinct same-tool calls —
     # lets a legit batch (e.g. 18 calendar events at once) through.
     _call_freq: collections.Counter = collections.Counter()
-    _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
     _force_answer = False  # set by loop-breaker → next round runs with NO tools
     # Supervisor: how many times we've nudged the model after it announced
     # an action without emitting the tool call. Capped to prevent a model
@@ -2797,7 +2828,7 @@ async def stream_agent_loop(
             if tool_blocks:
                 logger.info(f"[agent] force-answer round {round_num}: discarding {len(tool_blocks)} ignored tool call(s)")
             tool_blocks = []
-            if not _THINK_RE.sub("", strip_tool_blocks(round_response)).strip():
+            if not _strip_think_blocks(strip_tool_blocks(round_response)).strip():
                 # The model burned its budget gathering data but never wrote a
                 # final answer (common with weaker models on multi-source
                 # briefings). Salvage it: one blunt non-streaming synthesis call
@@ -2820,7 +2851,7 @@ async def stream_agent_loop(
                         url=endpoint_url, model=model, messages=_synth_messages,
                         headers=headers, temperature=0.3, max_tokens=max_tokens, timeout=60,
                     )
-                    _synth = _THINK_RE.sub("", strip_tool_blocks(_raw or "")).strip()
+                    _synth = _strip_think_blocks(strip_tool_blocks(_raw or "")).strip()
                 except Exception as _e:
                     logger.warning(f"[agent] grace synthesis failed: {_e}")
                 if _synth:
@@ -2882,7 +2913,7 @@ async def stream_agent_loop(
             # the model fix them (capped, and it must do new effectful work
             # to re-trigger). Skipped on force-answer rounds (no tools to
             # fix with), pure Q&A, and when the toggle is off.
-            _claimed_done = bool(_THINK_RE.sub("", cleaned_round).strip())
+            _claimed_done = bool(_strip_think_blocks(cleaned_round).strip())
             if (_effectful_used and not _force_answer
                     and _claimed_done
                     and _verifier_rounds < _VERIFIER_MAX_ROUNDS
@@ -2926,7 +2957,7 @@ async def stream_agent_loop(
             # actual tool now") and loop again. Capped at
             # _MAX_INTENT_NUDGES so a model that genuinely cannot use the
             # tool doesn't pin us in a forever loop.
-            _intent_text = _THINK_RE.sub("", cleaned_round).strip()
+            _intent_text = _strip_think_blocks(cleaned_round).strip()
             _intent_match = _INTENT_RE.search(_intent_text) if _intent_text else None
             # Only nudge when the round REALLY looks like an unfinished
             # promise: short response (<400 chars), no fenced code/answer,
@@ -2989,7 +3020,7 @@ async def stream_agent_loop(
         # "Real" answer text = round text minus <think> blocks. Empty-think
         # rounds (just "<think>\n\n</think>" + a tool call) must not read as
         # progress, so strip think before checking.
-        _real_text = _THINK_RE.sub("", cleaned_round).strip()
+        _real_text = _strip_think_blocks(cleaned_round).strip()
         # Circling = repeating a recent call with nothing written. Any
         # progress (a NEW distinct call, or actual answer text) resets it.
         if _is_repeat and not _real_text:
@@ -3215,9 +3246,12 @@ async def stream_agent_loop(
                     f'data: {json.dumps({"type": "ui_control", "data": result})}\n\n'
                 )
 
-            # ask_user: the agent posed a multiple-choice question. Emit it so the
-            # frontend renders clickable options, then end the turn (below) and
-            # wait — the user's pick becomes the next message.
+            # ask_user: remember the payload now, but emit the interactive event
+            # only *after* tool_output below.  Emitting it before tool_output let
+            # the subsequent tool-card rewrite/scroll push the choices out of
+            # view.  The payload is also copied into the persisted tool event so
+            # history reload can reconstruct an unanswered card.
+            _pending_ask_user_event = None
             if "ask_user" in result:
                 # The question lives in the tool args. ChatMessage.to_dict()
                 # replays only role+content to the model next turn — tool_event
@@ -3232,9 +3266,7 @@ async def stream_agent_loop(
                     _auq_delta = ("\n\n" if full_response.strip() else "") + _auq_q
                     full_response += _auq_delta
                     yield 'data: ' + json.dumps({"delta": _auq_delta}) + '\n\n'
-                yield (
-                    f'data: {json.dumps({"type": "ask_user", "data": result["ask_user"]})}\n\n'
-                )
+                _pending_ask_user_event = _auq
                 _awaiting_user = True
 
             # update_plan: agent wrote back to the plan (ticked a step / revised).
@@ -3289,6 +3321,10 @@ async def stream_agent_loop(
 
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code")}
+            if _pending_ask_user_event:
+                # Keep enough state in the streamed tool result for alternate
+                # clients to render the prompt without depending on event order.
+                tool_output_data["ask_user"] = _pending_ask_user_event
             if "ui_event" in result:
                 tool_output_data["ui_event"] = result["ui_event"]
                 for k in (
@@ -3318,6 +3354,14 @@ async def stream_agent_loop(
             if "diff" in result:
                 tool_output_data["diff"] = result["diff"]
             yield f'data: {json.dumps(tool_output_data)}\n\n'
+
+            # This must be the final UI event for ask_user: the frontend appends
+            # the card below the now-settled tool node and cancels any between-
+            # round spinner.  The turn ends after the current tool batch.
+            if _pending_ask_user_event:
+                yield (
+                    f'data: {json.dumps({"type": "ask_user", "data": _pending_ask_user_event})}\n\n'
+                )
 
             # Native document tools open in the editor + carry the REAL doc id.
             # Emit a doc_update so the frontend opens/activates it and sends it
@@ -3376,6 +3420,11 @@ async def stream_agent_loop(
             # this the diff shows live but vanishes from saved history.
             if result.get("diff"):
                 tool_event["diff"] = result["diff"]
+            if _pending_ask_user_event:
+                # Persist the structured question with the tool event.  On a
+                # reload, chatRenderer can restore the card; a later user
+                # message removes it as answered.
+                tool_event["ask_user"] = _pending_ask_user_event
             tool_events.append(tool_event)
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
