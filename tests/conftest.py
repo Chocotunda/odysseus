@@ -26,6 +26,13 @@ try:
     import sqlalchemy  # noqa: F401
     import sqlalchemy.orm  # noqa: F401
     import core.database  # noqa: F401
+    # src.agent_tools is stubbed at module scope by several test files (e.g.
+    # test_llm_core_sanitize_tool_calls, test_sanitize_preserves_reasoning) via
+    # the same `if mod not in sys.modules` guard. If it leaks, src.agent_loop
+    # binds strip_tool_blocks (and FUNCTION_TOOL_SCHEMAS) to a MagicMock for the
+    # rest of the session, breaking later real-import tests (e.g.
+    # test_agent_rounds_exhausted). Pre-import the real module so the guards skip.
+    import src.agent_tools  # noqa: F401
 except ImportError:
     pass  # not installed - the stubs below will handle it
 
