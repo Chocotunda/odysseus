@@ -15,6 +15,48 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+import src.llm_budget as _llm_budget
+from src.llm_pricing import compute_cost as _compute_cost
+
+
+class LLMBudgetExceeded(RuntimeError):
+    """Raised when a metered LLM call is blocked by the per-day spend cap."""
+
+
+def _budget_status_pct() -> int:
+    if not _llm_budget.DAILY_LLM_BUDGET_USD:
+        return 0
+    return int(_llm_budget.today_spend() / _llm_budget.DAILY_LLM_BUDGET_USD * 100)
+
+
+def _enforce_budget(url: str) -> None:
+    """Gate a metered LLM call; raise LLMBudgetExceeded if the cap is exceeded."""
+    if not _llm_budget.enabled():
+        return
+    from src.model_context import is_local_endpoint
+    if is_local_endpoint(url):
+        return
+    if _llm_budget.should_warn():
+        logger.warning("LLM spend at/over %s%% of the $%.2f daily budget",
+                       _budget_status_pct(), _llm_budget.DAILY_LLM_BUDGET_USD)
+    if _llm_budget.budget_status() == "exceeded":
+        raise LLMBudgetExceeded(
+            f"Daily LLM budget (${_llm_budget.DAILY_LLM_BUDGET_USD:.2f}) reached - resets at local midnight")
+
+
+def _account_llm_cost(url: str, model: str, usage: dict) -> None:
+    """Accrue metered LLM cost; silently skips local/disabled endpoints."""
+    if not _llm_budget.enabled():
+        return
+    from src.model_context import is_local_endpoint
+    if is_local_endpoint(url):
+        return
+    try:
+        _llm_budget.add_spend(_compute_cost(model, usage or {}))
+    except Exception as e:
+        logger.warning("LLM cost accrual failed: %s", e)
+
+
 class LLMConfig:
     """Configuration constants for LLM operations."""
     DEFAULT_TIMEOUT = 30
@@ -1706,6 +1748,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - data: [DONE]                       — end of stream
     """
     provider = _detect_provider(url)
+    _enforce_budget(url)
     messages_copy = _sanitize_llm_messages(messages)
 
     # Consolidate multiple system messages into one at the start.
@@ -2124,6 +2167,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                         _usage_data["model"] = _actual_model
                                         if not _same_model_identity(_actual_model, model):
                                             _usage_data["requested_model"] = model
+                                    _account_llm_cost(url, _actual_model or model, _usage_data)
                                     yield f'data: {json.dumps({"type": "usage", "data": _usage_data})}\n\n'
                                 elif "choices" in j:
                                     _c0 = (j["choices"] or [None])[0]
