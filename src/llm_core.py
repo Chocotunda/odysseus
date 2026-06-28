@@ -70,6 +70,31 @@ def _extract_cache_tokens(usage: dict) -> dict:
     return {"cache_hit_tokens": hit, "cache_miss_tokens": miss}
 
 
+def _cost_usage_from_response(provider: str, data: dict) -> dict:
+    """Normalize a NON-streaming provider response into the usage shape
+    ``_account_llm_cost``/``compute_cost`` expect (input_tokens, output_tokens,
+    cache_hit_tokens). Mirrors stream_llm's per-provider normalization."""
+    data = data or {}
+    if provider == "ollama":
+        return {"input_tokens": int(data.get("prompt_eval_count") or 0),
+                "output_tokens": int(data.get("eval_count") or 0)}
+    u = data.get("usage") or {}
+    if provider == "anthropic":
+        c_read = int(u.get("cache_read_input_tokens") or 0)
+        c_create = int(u.get("cache_creation_input_tokens") or 0)
+        # cache-read billed at the cheaper rate; fresh + cache-creation at full input
+        return {"input_tokens": int(u.get("input_tokens") or 0) + c_read + c_create,
+                "output_tokens": int(u.get("output_tokens") or 0),
+                "cache_hit_tokens": c_read}
+    # openai-compatible (openrouter, openai, deepseek, vllm, …)
+    usage = {"input_tokens": int(u.get("prompt_tokens") or 0),
+             "output_tokens": int(u.get("completion_tokens") or 0)}
+    cache = _extract_cache_tokens(u)
+    if cache["cache_hit_tokens"]:
+        usage["cache_hit_tokens"] = cache["cache_hit_tokens"]
+    return usage
+
+
 class LLMConfig:
     """Configuration constants for LLM operations."""
     DEFAULT_TIMEOUT = 30
@@ -1761,6 +1786,14 @@ async def llm_call_async(
         logger.debug(f"Returning cached response for key: {cache_key}")
         return cached_response
 
+    # Per-day spend cap (same gate as stream_llm). Non-cached calls only — a
+    # cached return spends nothing. stream_llm yields an error event; the
+    # non-streaming path raises HTTPException(402) to match its error contract.
+    try:
+        _enforce_budget(url)
+    except LLMBudgetExceeded as e:
+        raise HTTPException(402, str(e))
+
     if provider == "chatgpt-subscription":
         # ChatGPT/Codex requires streamed Responses requests even for callers
         # that want a plain string (auto-title, memory extraction, etc.).
@@ -1874,6 +1907,12 @@ async def llm_call_async(
                 else:
                     msg = data["choices"][0]["message"]
                     response = msg.get("content") or msg.get("reasoning_content") or ""
+                # Accrue metered cost (same as stream_llm). Own try/except so a
+                # usage-parsing quirk can never turn a good response into a 502.
+                try:
+                    _account_llm_cost(url, model, _cost_usage_from_response(provider, data))
+                except Exception:
+                    logger.debug("llm_call_async cost accrual failed", exc_info=True)
                 _set_cached_response(cache_key, response)
                 return response
             except Exception:

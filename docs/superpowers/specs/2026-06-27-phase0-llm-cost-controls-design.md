@@ -27,6 +27,8 @@ Success:
 
 All three components attach at/around **`stream_llm`** (`src/llm_core.py:1696`) — the single async function every LLM call flows through (`stream_llm_with_fallback`, `:2301`, wraps it across candidate endpoints). The free/local exemption uses the canonical **`is_local_endpoint(url)`** (`src/model_context`, already imported at `src/llm_core.py:643-644`): if an endpoint is local, it is exempt from cost accounting **and** the cap.
 
+> **CORRECTION (2026-06-28):** "the single async function every LLM call flows through" was WRONG. The **non-streaming** primitive **`llm_call_async`** is a separate path (used by non-streaming `/api/chat`, auto-title, memory extraction, and other background callers) and was NOT gated — metered calls through it bypassed both the cap and accrual. Fixed by adding the same `_enforce_budget` (raises `HTTPException(402)`) + `_account_llm_cost` hooks to `llm_call_async`, plus `_cost_usage_from_response()` to normalize its non-streaming usage. Its `chatgpt-subscription` branch already delegates to `stream_llm`, so it stays covered there. Regression tests: `tests/test_llm_call_async_budget.py`.
+
 ## 4. Component A — DeepSeek prefix-stability (verify + guard)
 
 **Why:** DeepSeek (detected as a generic `openai` provider) auto-caches the request prefix server-side at ~1/50 the input price. The lever is keeping the system+tools prefix **byte-identical** round-to-round for a task so the cache keeps hitting.
