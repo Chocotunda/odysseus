@@ -13,6 +13,31 @@ from src import meeting_notes as MN
 logger = logging.getLogger(__name__)
 
 
+def _meeting_event_dict(ev) -> Dict[str, Any]:
+    """Trim a CalendarEvent to the fields Tide's meeting row needs.
+
+    Timed UTC rows (is_utc=True) get a trailing 'Z' so the client reads them as
+    absolute; legacy naive rows stay naive (read as local). Mirrors
+    calendar_routes._event_to_dict.
+    """
+    if ev.all_day:
+        start_str = ev.dtstart.strftime("%Y-%m-%d")
+        end_str = ev.dtend.strftime("%Y-%m-%d")
+    else:
+        suffix = "Z" if getattr(ev, "is_utc", False) else ""
+        start_str = ev.dtstart.isoformat() + suffix
+        end_str = ev.dtend.isoformat() + suffix
+    return {
+        "uid": ev.uid,
+        "summary": ev.summary or "",
+        "dtstart": start_str,
+        "dtend": end_str,
+        "location": ev.location or "",
+        "all_day": bool(ev.all_day),
+        "is_utc": bool(getattr(ev, "is_utc", False)),
+    }
+
+
 class MeetingNoteSave(BaseModel):
     title: str = ""
     content: str = ""
@@ -66,6 +91,23 @@ def setup_meeting_notes_routes():
             rows = query.order_by(CalendarEvent.dtstart.desc()).limit(30).all()
             return {"meetings": [{"uid": e.uid, "summary": e.summary,
                                   "dtstart": e.dtstart.isoformat() if e.dtstart else None} for e in rows]}
+        finally:
+            db.close()
+
+    @router.get("/meeting/{uid}")
+    def get_meeting_detail(request: Request, uid: str):
+        """Owner-scoped point lookup of a single meeting's date/time/location."""
+        owner = _scope_owner(request, {"calendar:read", "notes:read"})
+        db = SessionLocal()
+        try:
+            ev = db.query(CalendarEvent).filter(CalendarEvent.uid == uid).first()
+            if not ev:
+                raise HTTPException(status_code=404, detail="meeting not found")
+            cal = getattr(ev, "calendar", None)
+            if owner is not None and cal is not None and (
+                    cal.owner is None or cal.owner != owner):
+                raise HTTPException(status_code=404, detail="meeting not found")
+            return _meeting_event_dict(ev)
         finally:
             db.close()
 
