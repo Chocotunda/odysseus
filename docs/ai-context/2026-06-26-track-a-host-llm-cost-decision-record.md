@@ -111,8 +111,12 @@ Goal: **put both Odysseus and Hermes online cheaply and measure real cost** befo
 - Add a **hard per-day credit cap** + spend logging on the DeepSeek endpoint so the trial can't run away.
 
 ### Phase 1 — Capable LLM online (no host change yet)
-- Add **DeepSeek V4-Flash** as a `ModelEndpoint` (OpenAI-compatible base URL + key) via the existing provider layer. Keep Mac Ollama as the uncensored/sensitive route.
-- Verify tool/function-calling round-trips against `FUNCTION_TOOL_SCHEMAS`; run a small live soak. **Measure** real chat/research token cost for a week.
+- Add **DeepSeek V4-Flash** as a `ModelEndpoint` (OpenAI-compatible base URL + key) via the existing provider layer. OpenRouter is already a first-class provider in `src/llm_core.py` (host detection + auth headers + classification), so this is **config, not code** — a `ModelEndpoint` row (`base_url`, encrypted `api_key`, pin the model id). No env-var fallback for the key — it must live on the row.
+- **TWO ACCESS LANES for the SAME model (decided 2026-06-27):**
+  - **TEST lane = OpenRouter free** (`deepseek/deepseek-v4-flash:free`, base `https://openrouter.ai/api/v1`). **$0**, 1M ctx. Use it for Phase-1 integration verification (tool/function-calling round-trips, the spend-cap plumbing, cache observability) at zero spend. Caps: **50 req/day** (→ **1,000/day** after a one-time **$10** top-up); free routing **auto-failovers across providers** so you can't pin one backend and **prompt-cache continuity breaks** (cache is per-provider). Privacy: OpenRouter doesn't train, no prompt logging by default — but keep PII local regardless (varying providers).
+  - **PROD lane = paid metered** for the always-on VPS brain + Hermes. Free can't sustain production: one `agent_loop` task fires up to **50 req** (`MAX_AGENT_ROUNDS=50`), so 50/day ≈ one task, 1,000/day ≈ ~20 tasks; a 24/7 Hermes loop blows through it. Prefer **DeepSeek-direct** (`api.deepseek.com`) for prod — real prompt caching + the only ToS that permits an autonomous backend; OpenRouter-paid is the fallback (adds a middleman + routing variability).
+- Verify tool/function-calling round-trips against `FUNCTION_TOOL_SCHEMAS`; run a small live soak. **Measure** real chat/research token cost for a week (on the PROD lane — free won't reflect cached cost). Keep Mac Ollama as the uncensored/sensitive route.
+- **Model id note:** `deepseek/deepseek-v4-flash` is already V4-pinned (sidesteps the `deepseek-chat`/`deepseek-reasoner` **2026-07-24** deprecation).
 
 ### Phase 2 — Brain online (always-on, CPU-only)
 - Stand up the **slimmed** Odysseus on the **Hetzner CAX21 VPS** (decided). Pin all Docker image tags; **tailnet-only bind** (no public 0.0.0.0). Drop the ChromaDB container (in-process fastembed); run SearXNG on demand.
