@@ -13,6 +13,27 @@ from src import meeting_notes as MN
 logger = logging.getLogger(__name__)
 
 
+def _attendees_for_meeting(db, owner, uid) -> List[Dict[str, Any]]:
+    """Live People linked to this meeting via attended_by, owner-scoped, name-sorted."""
+    from core.hub_models import Person, Link
+    from src import links as L
+    rows = (db.query(Link)
+              .filter(Link.owner == owner, Link.deleted_at.is_(None),
+                      Link.from_type == L.NODE_MEETING, Link.from_id == uid,
+                      Link.rel == L.REL_ATTENDED_BY)
+              .all())
+    pids = [r.to_id for r in rows]
+    if not pids:
+        return []
+    people = (db.query(Person)
+                .filter(Person.owner == owner, Person.deleted_at.is_(None),
+                        Person.id.in_(pids))
+                .all())
+    people.sort(key=lambda p: (p.name or "").lower())
+    return [{"id": p.id, "name": p.name, "email": p.email,
+             "source": getattr(p, "source", "manual")} for p in people]
+
+
 def _meeting_event_dict(ev) -> Dict[str, Any]:
     """Trim a CalendarEvent to the fields Tide's meeting row needs.
 
@@ -107,7 +128,9 @@ def setup_meeting_notes_routes():
             if owner is not None and cal is not None and (
                     cal.owner is None or cal.owner != owner):
                 raise HTTPException(status_code=404, detail="meeting not found")
-            return _meeting_event_dict(ev)
+            d = _meeting_event_dict(ev)
+            d["attendees"] = _attendees_for_meeting(db, owner, uid)
+            return d
         finally:
             db.close()
 
