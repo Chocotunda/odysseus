@@ -5,7 +5,11 @@ split into separate functions so the parse layer is unit-testable without a DB.
 """
 from __future__ import annotations
 
+import os
+import uuid as _uuid
 from typing import List, Optional, Tuple
+
+from sqlalchemy import func
 
 
 def normalize_email(raw: object) -> Optional[str]:
@@ -48,3 +52,47 @@ def parse_attendees(vevent) -> List[Tuple[str, str]]:
             seen.add(email)
             out.append((email, _name_from(str(a), params.get("CN"))))
     return out
+
+
+def owner_self_addresses(db, owner: str) -> set:
+    """Normalized set of the owner's OWN addresses, to self-skip."""
+    from core.database import EmailAccount  # local import avoids import cycle at module load
+    addrs = set()
+    for acc in db.query(EmailAccount).filter(EmailAccount.owner == owner).all():
+        e = normalize_email(getattr(acc, "imap_user", None))
+        if e:
+            addrs.add(e)
+    owner_as_email = normalize_email(owner)
+    if owner_as_email:
+        addrs.add(owner_as_email)
+    for extra in os.getenv("ODYSSEUS_OWNER_EMAILS", "").split(","):
+        e = normalize_email(extra)
+        if e:
+            addrs.add(e)
+    return addrs
+
+
+def resolve_or_create_person_by_email(db, owner, email, name, *, cache: dict) -> str:
+    """Return a Person id for `email`, creating a calendar-sourced Person if none
+    exists for this owner. Dedup via cache (this run) then a live email match.
+    Caller owns the commit."""
+    from core.hub_models import Person, next_person_seq
+    key = normalize_email(email)
+    if key is None:
+        raise ValueError(f"un-normalizable email: {email!r}")
+    if key in cache:
+        return cache[key]
+    existing = (
+        db.query(Person)
+        .filter(Person.owner == owner, Person.deleted_at.is_(None))
+        .filter(func.lower(Person.email) == key)
+        .first()
+    )
+    if existing is not None:
+        cache[key] = existing.id          # do NOT touch existing.source
+        return existing.id
+    p = Person(id=str(_uuid.uuid4()), owner=owner, name=(name or key), email=key, source="calendar")
+    p.seq = next_person_seq(db, owner)
+    db.add(p)
+    cache[key] = p.id
+    return p.id
