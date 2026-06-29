@@ -96,3 +96,25 @@ def resolve_or_create_person_by_email(db, owner, email, name, *, cache: dict) ->
     db.add(p)
     cache[key] = p.id
     return p.id
+
+
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
+
+
+def link_event_attendees(db, owner, event_uid, vevent, *, self_addrs: set, cache: dict) -> int:
+    """Resolve each non-self attendee to a Person and add a Meeting→Person
+    attended_by edge. Idempotent (add_link dedups). Caller commits."""
+    import src.links as L
+    linked = 0
+    for email, name in parse_attendees(vevent):
+        if email in self_addrs:
+            continue
+        try:
+            pid = resolve_or_create_person_by_email(db, owner, email, name, cache=cache)
+            L.add_link(db, owner, L.NODE_MEETING, event_uid, L.REL_ATTENDED_BY, L.NODE_PERSON, pid)
+            linked += 1
+        except Exception as e:   # one bad attendee must not abort the whole sync
+            _log.warning("attendee link failed for %s on %s: %s", email, event_uid, e)
+    return linked
