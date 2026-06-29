@@ -32,6 +32,9 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
 
+from src.constants import CALENDAR_ATTENDEE_LINKING
+from src.contacts import link_event_attendees, owner_self_addresses
+
 logger = logging.getLogger(__name__)
 
 # Pull window: 90 days back, 1 year forward. Keeps the REPORT cheap and
@@ -267,6 +270,19 @@ def _should_prune_window(seen_uids: set, parse_failed: bool) -> bool:
     return not parse_failed
 
 
+def _maybe_link_attendees(db, owner, event_uid, vevent, cal, *, self_addrs, cache):
+    """Link calendar attendees to People iff the global flag is on AND this
+    calendar isn't opted out. Best-effort: never raises into the sync loop."""
+    if not CALENDAR_ATTENDEE_LINKING:
+        return
+    if not getattr(cal, "link_attendees", True):
+        return
+    try:
+        link_event_attendees(db, owner, event_uid, vevent, self_addrs=self_addrs, cache=cache)
+    except Exception as e:   # belt-and-suspenders; the inner fn already guards per-attendee
+        logging.getLogger(__name__).warning("attendee linking failed for %s: %s", event_uid, e)
+
+
 def _sync_blocking(owner: str, url: str, username: str, password: str, account_id: str = "") -> dict:
     """The actual sync — synchronous, intended to run in a threadpool.
     Returns counts: {calendars, events, deleted, errors}."""
@@ -310,6 +326,8 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
 
     db = SessionLocal()
     try:
+        attendee_self = owner_self_addresses(db, owner) if CALENDAR_ATTENDEE_LINKING else set()
+        attendee_cache: dict = {}
         for remote_cal in calendars:
             try:
                 remote_url = str(remote_cal.url)
@@ -451,6 +469,8 @@ def _sync_blocking(owner: str, url: str, username: str, password: str, account_i
                             db.add(new_ev)
                             pending[uid_val] = new_ev
                         result["events"] += 1
+                        _maybe_link_attendees(db, owner, uid_val, comp, local_cal,
+                                              self_addrs=attendee_self, cache=attendee_cache)
                 db.commit()
 
                 # Prune locally-cached CalDAV events that vanished
