@@ -128,6 +128,7 @@ class Person(TimestampMixin, Base):
     contact_uid = Column(String, nullable=True)   # optional iCloud CardDAV contact ref
     email       = Column(String, nullable=True)
     role        = Column(String, nullable=True)
+    source      = Column(String, nullable=False, default="manual")  # manual | calendar | email — provenance tier
     archived    = Column(Boolean, default=False)
     deleted_at  = Column(DateTime, nullable=True, index=True)   # soft-delete tombstone; NULL = live
     seq         = Column(Integer, index=True)   # per-owner monotonic write sequence; the ?since= cursor

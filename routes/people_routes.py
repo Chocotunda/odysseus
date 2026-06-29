@@ -41,6 +41,7 @@ def _person_to_dict(p: Person, area_id: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": p.id, "name": p.name, "email": p.email, "role": p.role,
         "contact_uid": p.contact_uid, "archived": bool(p.archived),
+        "source": getattr(p, "source", "manual"),
         "area_id": area_id,
         "seq": p.seq,
         "deleted": p.deleted_at is not None,

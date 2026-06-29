@@ -1659,6 +1659,7 @@ class CalendarCal(TimestampMixin, Base):
     # multi-account support was added (treated as "use any configured account").
     account_id = Column(String, nullable=True, index=True)
     caldav_base_url = Column(String, nullable=True)
+    link_attendees = Column(Boolean, nullable=False, default=True)  # opt-out: feed attendee→Person linking
 
     events = relationship("CalendarEvent", back_populates="calendar", cascade="all, delete-orphan")
 
@@ -1851,6 +1852,8 @@ def init_db():
     _migrate_add_calendar_is_utc()
     _migrate_add_calendar_origin()
     _migrate_add_calendar_account_id()
+    _migrate_add_person_source()
+    _migrate_add_calendar_link_attendees()
     _migrate_add_caldav_sync_columns()
     _migrate_chat_messages_fts()
     _migrate_encrypt_email_passwords()
@@ -2175,6 +2178,50 @@ def _migrate_add_caldav_sync_columns():
         conn.close()
     except Exception as e:
         logging.getLogger(__name__).warning(f"CalDAV sync metadata migration failed: {e}")
+
+
+def _migrate_add_person_source():
+    """Add `source` (manual|calendar|email) to people for the relationship tier. Idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(people)").fetchall()]
+        if columns and "source" not in columns:
+            conn.execute("ALTER TABLE people ADD COLUMN source TEXT DEFAULT 'manual'")
+            conn.execute("UPDATE people SET source='manual' WHERE source IS NULL")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'source' column to people")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"people.source migration failed: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+def _migrate_add_calendar_link_attendees():
+    """Add `link_attendees` (per-calendar opt-out) to calendars. Idempotent."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(calendars)").fetchall()]
+        if columns and "link_attendees" not in columns:
+            conn.execute("ALTER TABLE calendars ADD COLUMN link_attendees BOOLEAN DEFAULT 1")
+            conn.execute("UPDATE calendars SET link_attendees=1 WHERE link_attendees IS NULL")
+            conn.commit()
+            logging.getLogger(__name__).info("Migrated: added 'link_attendees' column to calendars")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"calendars.link_attendees migration failed: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def _migrate_add_calendar_metadata():

@@ -103,6 +103,9 @@ SEARXNG_INSTANCE = os.getenv("SEARXNG_INSTANCE", "http://localhost:8080")
 CLEANUP_ENABLED = os.getenv("CLEANUP_ENABLED", "True").lower() == "true"
 CLEANUP_INTERVAL_HOURS = int(os.getenv("CLEANUP_INTERVAL_HOURS", "24"))
 
+# Feature flags (disabled by default — set env var to "1", "true", or "yes" to enable)
+CALENDAR_ATTENDEE_LINKING = os.getenv("ODYSSEUS_CALENDAR_ATTENDEE_LINKING", "False").lower() in ("1", "true", "yes")
+
 # Auth policy
 PASSWORD_MIN_LENGTH = 8
 
